@@ -1,0 +1,12 @@
+[package]
+name = "rete"
+version = "0.0.1"
+authors = ["Mitchell Keith Bloch <bazald@gmail.com>"]
+description = "rete implementation coming soon 👍"
+readme = "README.md"
+edition = "2018"
+repository = "https://github.com/bazald/rete/"
+license = "Mozilla Public License Version 2.0"
+license-file = "LICENSE"
+
+[dependencies]
