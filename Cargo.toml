@@ -7,6 +7,16 @@ readme = "README.md"
 edition = "2018"
 repository = "https://github.com/bazald/rete/"
 license = "MPL-2.0"
-license-file = "LICENSE"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+crossbeam = "0.7.3"
+rayon = "1.4.0"
+xarc = "0.2.0"
+wasm-bindgen = "0.2.68"
+
+[dev-dependencies]
+tokio = { version = "0.2.22", features = ["macros", "rt-core", "rt-threaded"] }
+warp = "0.2.5"

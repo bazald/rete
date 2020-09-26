@@ -1,0 +1,20 @@
+<html>
+  <head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type"/>
+  </head>
+  <script type="module" src="./rete.js"></script>
+  <script type="module">
+    import init, {greet} from './rete.js'
+
+    async function run() {
+      await init();
+
+      greet("world");
+    }
+
+    run();
+  </script>
+  <body>
+  </body>
+  </html>
+  
