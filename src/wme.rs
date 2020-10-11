@@ -2,7 +2,7 @@ use crate::symbol::*;
 use std::fmt;
 
 #[derive(Clone, Debug, Hash, PartialEq, PartialOrd)]
-struct WME {
+pub struct WME {
   pub id: Symbol,
   pub attr: Symbol,
   pub value: Symbol,

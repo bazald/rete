@@ -1,8 +1,10 @@
-use std::fmt;
+use crate::float::Float;
+use core::fmt;
 
 #[derive(Clone, Debug, Hash, PartialEq, PartialOrd)]
 pub enum Symbol {
   Integer(i64),
+  Float(Float),
   String(String),
   Identifier(String),
   Variable(String),
@@ -12,6 +14,7 @@ impl fmt::Display for Symbol {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Symbol::Integer(ii) => write!(f, "{}", ii),
+      Symbol::Float(ff) => write!(f, "{}", ff),
       Symbol::String(ss) => write!(f, "\"{}\"", ss),
       Symbol::Identifier(id) => write!(f, ">{}<", id),
       Symbol::Variable(va) => write!(f, "<{}>", va),
@@ -22,6 +25,12 @@ impl fmt::Display for Symbol {
 impl From<i64> for Symbol {
   fn from(value: i64) -> Self {
     Symbol::Integer(value)
+  }
+}
+
+impl From<f64> for Symbol {
+  fn from(value: f64) -> Self {
+    Symbol::Float(value.into())
   }
 }
 

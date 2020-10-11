@@ -1,14 +1,14 @@
 use std::{borrow::Cow, sync::Arc};
 
 #[derive(Debug)]
-struct LNode<T: Clone + Eq> {
+pub(super) struct LNode<T: Clone + PartialEq> {
   pub value: T,
   pub next: Option<Arc<LNode<T>>>,
   pub size: u64,
 }
 
-impl<T: Clone + Eq> LNode<T> {
-  fn has_next(self: &Self, next: &Option<Arc<LNode<T>>>) -> bool {
+impl<T: Clone + PartialEq> LNode<T> {
+  fn has_next(&self, next: &Option<Arc<LNode<T>>>) -> bool {
     match &self.next {
       Some(sn) => match next {
         Some(n) => Arc::ptr_eq(sn, n),
@@ -19,7 +19,7 @@ impl<T: Clone + Eq> LNode<T> {
   }
 }
 
-impl<T: Clone + Eq> LNode<T> {
+impl<T: Clone + PartialEq> LNode<T> {
   fn new(value: T, next: Option<Arc<Self>>) -> Self {
     let size = match &next {
       Some(ln) => 1 + ln.size,
@@ -33,11 +33,11 @@ impl<T: Clone + Eq> LNode<T> {
   }
 }
 
-fn new<T: Clone + Eq>(value: T, next: Option<Arc<LNode<T>>>) -> Option<Arc<LNode<T>>> {
+fn new<T: Clone + PartialEq>(value: T, next: Option<Arc<LNode<T>>>) -> Option<Arc<LNode<T>>> {
   Some(Arc::new(LNode::new(value, next)))
 }
 
-fn find_in_lnode<T: Clone + Eq>(ln: &Option<Arc<LNode<T>>>, value: &T) -> Option<Arc<LNode<T>>> {
+fn find_in_lnode<T: Clone + PartialEq>(ln: &Option<Arc<LNode<T>>>, value: &T) -> Option<Arc<LNode<T>>> {
   if ln.is_none() {
     return None;
   }
@@ -51,14 +51,14 @@ fn find_in_lnode<T: Clone + Eq>(ln: &Option<Arc<LNode<T>>>, value: &T) -> Option
   }
 }
 
-fn insert_in_lnode<T: Clone + Eq>(ln: &Option<Arc<LNode<T>>>, value: Cow<T>) -> Arc<LNode<T>> {
+fn insert_in_lnode<T: Clone + PartialEq>(ln: &Option<Arc<LNode<T>>>, value: Cow<T>) -> Arc<LNode<T>> {
   match find_in_lnode(ln, value.as_ref()) {
     Some(_) => ln.as_ref().unwrap().clone(),
     None => Arc::new(LNode::new(value.into_owned(), ln.clone())),
   }
 }
 
-fn remove_from_lnode<T: Clone + Eq>(ln: &Option<Arc<LNode<T>>>, value: &T) -> Option<Arc<LNode<T>>> {
+fn remove_from_lnode<T: Clone + PartialEq>(ln: &Option<Arc<LNode<T>>>, value: &T) -> Option<Arc<LNode<T>>> {
   if ln.is_none() {
     return None;
   }

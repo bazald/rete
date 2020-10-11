@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 #[derive(Debug, PartialEq)]
-struct SNode<T: PartialEq> {
+pub(super) struct SNode<T: PartialEq> {
   pub value: T
 }
 
