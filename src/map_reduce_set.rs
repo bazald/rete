@@ -1,17 +1,11 @@
 use std::{collections::HashSet, hash::Hash};
 
 pub trait MapReduceSet<K: Eq + Hash> {
-    fn is_empty(&self) -> bool;
-
-    fn len(&self) -> usize;
-
-    fn clear(&mut self);
-
     fn find(&self, key: &K) -> Option<&'_ K>;
 
     fn visit<Op>(&self, op: Op) where Op: Fn(&'_ K);
 
-    fn transform<ReduceT, Op, ReduceOp>
+    fn transform<ReduceT, ReduceOp, Op>
         (&self, reduce_op: ReduceOp, op: Op) -> (Self, ReduceT)
         where
         Self: Sized,
@@ -19,7 +13,7 @@ pub trait MapReduceSet<K: Eq + Hash> {
         ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
         Op: Fn(&K) -> (Option<K>, ReduceT);
 
-    fn joint_transform<ReduceT, BothOp, LeftOp, RightOp, ReduceOp>
+    fn joint_transform<ReduceT, ReduceOp, BothOp, LeftOp, RightOp>
         (&self, right: &Self, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
         where
         Self: Sized,
@@ -31,18 +25,6 @@ pub trait MapReduceSet<K: Eq + Hash> {
 }
 
 impl<K: Eq + Hash> MapReduceSet<K> for HashSet<K> {
-    fn is_empty(&self) -> bool {
-        (self as &HashSet<K>).is_empty()
-    }
-
-    fn len(&self) -> usize {
-        (self as &HashSet<K>).len()
-    }
-
-    fn clear(&mut self) {
-        (self as &mut HashSet<K>).clear()
-    }
-
     fn find<'a>(&self, key: &K) -> Option<&'_ K> {
         self.iter().find(|k| **k == *key)
     }
@@ -51,7 +33,7 @@ impl<K: Eq + Hash> MapReduceSet<K> for HashSet<K> {
         self.iter().for_each(|k| op(k));
     }
 
-    fn transform<ReduceT, Op, ReduceOp>
+    fn transform<ReduceT, ReduceOp, Op>
         (&self, reduce_op: ReduceOp, op: Op) -> (Self, ReduceT)
         where
         ReduceT: Default,
@@ -70,7 +52,72 @@ impl<K: Eq + Hash> MapReduceSet<K> for HashSet<K> {
         (transformed, reduced.unwrap())
     }
 
-    fn joint_transform<ReduceT, BothOp, LeftOp, RightOp, ReduceOp>
+    fn joint_transform<ReduceT, ReduceOp, BothOp, LeftOp, RightOp>
+        (&self, right: &Self, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
+        where
+        ReduceT: Default,
+        ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
+        BothOp: Fn(&K, &K) -> (Option<K>, ReduceT),
+        LeftOp: Fn(&K) -> (Option<K>, ReduceT),
+        RightOp: Fn(&K) -> (Option<K>, ReduceT)
+    {
+        let mut transformed = Self::default();
+        let mut reduced = Some(ReduceT::default());
+        self.iter().for_each(|lkey| {
+            let rkey = right.find(lkey);
+            let op_result = if let Some(rkey) = rkey {
+                both_op(lkey, rkey)
+            }
+            else {
+                left_op(lkey)
+            };
+            if let Some(key) = op_result.0 {
+                transformed.insert(key);
+            }
+            reduced = Some(reduce_op(reduced.take().unwrap(), op_result.1));
+        });
+        right.iter().for_each(|rkey| {
+            if self.find(rkey).is_none() {
+                let op_result = right_op(rkey);
+                if let Some(key) = op_result.0 {
+                    transformed.insert(key);
+                }
+                reduced = Some(reduce_op(reduced.take().unwrap(), op_result.1));
+            }
+        });
+        (transformed, reduced.unwrap())
+    }
+}
+
+impl<K: Clone + Eq + Hash> MapReduceSet<K> for im::HashSet<K> {
+    fn find<'a>(&self, key: &K) -> Option<&'_ K> {
+        self.iter().find(|k| **k == *key)
+    }
+
+    fn visit<Op>(&self, op: Op) where Op: Fn(&K) {
+        self.iter().for_each(|k| op(k));
+    }
+
+    fn transform<ReduceT, ReduceOp, Op>
+        (&self, reduce_op: ReduceOp, op: Op) -> (Self, ReduceT)
+        where
+        ReduceT: Default,
+        ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
+        Op: Fn(&K) -> (Option<K>, ReduceT)
+    {
+        let mut transformed = Self::default();
+        let mut reduced = Some(ReduceT::default());
+        self.iter().for_each(|key| {
+            let op_result = op(key);
+            if let Some(key) = op_result.0 {
+                transformed.insert(key);
+            }
+            reduced = Some(reduce_op(reduced.take().unwrap(), op_result.1));
+        });
+        (transformed, reduced.unwrap())
+    }
+
+    fn joint_transform<ReduceT, ReduceOp, BothOp, LeftOp, RightOp>
         (&self, right: &Self, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
         where
         ReduceT: Default,
@@ -114,7 +161,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn map_reduce_map_hashmap() {
+    fn map_reduce_map_hashset() {
         let mut left = HashSet::<i64>::new();
         let mut right = HashSet::<i64>::new();
 
