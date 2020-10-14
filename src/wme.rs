@@ -1,6 +1,13 @@
 use crate::symbol::*;
 use std::fmt;
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd)]
+pub enum WMEIndex {
+    Identifier,
+    Attribute,
+    Value,
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd)]
 pub struct WME {
     pub id: Symbol,
@@ -9,11 +16,19 @@ pub struct WME {
 }
 
 impl WME {
-  pub fn new(id: Symbol, attr: Symbol, value: Symbol) -> WME {
+    pub fn new(id: Symbol, attr: Symbol, value: Symbol) -> WME {
         WME {
             id,
             attr,
             value,
+        }
+    }
+
+    pub fn at(&self, index: WMEIndex) -> &'_ Symbol {
+        match index {
+            WMEIndex::Identifier => &self.id,
+            WMEIndex::Attribute => &self.attr,
+            WMEIndex::Value => &self.value,
         }
     }
 }

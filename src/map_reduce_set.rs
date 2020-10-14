@@ -13,15 +13,29 @@ pub trait MapReduceSet<K: Eq + Hash> {
         ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
         Op: Fn(&K) -> (Option<K>, ReduceT);
 
-    fn joint_transform<ReduceT, ReduceOp, BothOp, LeftOp, RightOp>
-        (&self, right: &Self, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
+    fn joint_transform<ReduceT, ReduceOp, RightT, BothOp, LeftOp, RightOp>
+        (&self, right: &RightT, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
         where
         Self: Sized,
         ReduceT: Default,
         ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
+        RightT: MapReduceSet<K>,
+        for<'i> &'i RightT: IntoIterator<Item = &'i K>,
         BothOp: Fn(&K, &K) -> (Option<K>, ReduceT),
         LeftOp: Fn(&K) -> (Option<K>, ReduceT),
         RightOp: Fn(&K) -> (Option<K>, ReduceT);
+
+    fn xor<RightT>
+        (&self, right: &RightT) -> Self
+        where
+        Self: Sized,
+        K: Clone,
+        RightT: MapReduceSet<K>,
+        for<'i> &'i RightT: IntoIterator<Item = &'i K>,
+    {
+        let op = |k: &K| (Some(k.clone()), ());
+        self.joint_transform(right, |_,_| (), |_,_| (None, ()), op, op).0
+    }
 }
 
 impl<K: Eq + Hash> MapReduceSet<K> for HashSet<K> {
@@ -52,11 +66,13 @@ impl<K: Eq + Hash> MapReduceSet<K> for HashSet<K> {
         (transformed, reduced.unwrap())
     }
 
-    fn joint_transform<ReduceT, ReduceOp, BothOp, LeftOp, RightOp>
-        (&self, right: &Self, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
+    fn joint_transform<ReduceT, ReduceOp, RightT, BothOp, LeftOp, RightOp>
+        (&self, right: &RightT, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
         where
         ReduceT: Default,
         ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
+        RightT: MapReduceSet<K>,
+        for<'i> &'i RightT: IntoIterator<Item = &'i K>,
         BothOp: Fn(&K, &K) -> (Option<K>, ReduceT),
         LeftOp: Fn(&K) -> (Option<K>, ReduceT),
         RightOp: Fn(&K) -> (Option<K>, ReduceT)
@@ -76,7 +92,7 @@ impl<K: Eq + Hash> MapReduceSet<K> for HashSet<K> {
             }
             reduced = Some(reduce_op(reduced.take().unwrap(), op_result.1));
         });
-        right.iter().for_each(|rkey| {
+        right.into_iter().for_each(|rkey| {
             if self.find(rkey).is_none() {
                 let op_result = right_op(rkey);
                 if let Some(key) = op_result.0 {
@@ -117,11 +133,13 @@ impl<K: Clone + Eq + Hash> MapReduceSet<K> for im::HashSet<K> {
         (transformed, reduced.unwrap())
     }
 
-    fn joint_transform<ReduceT, ReduceOp, BothOp, LeftOp, RightOp>
-        (&self, right: &Self, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
+    fn joint_transform<ReduceT, ReduceOp, RightT, BothOp, LeftOp, RightOp>
+        (&self, right: &RightT, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
         where
         ReduceT: Default,
         ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
+        RightT: MapReduceSet<K>,
+        for<'i> &'i RightT: IntoIterator<Item = &'i K>,
         BothOp: Fn(&K, &K) -> (Option<K>, ReduceT),
         LeftOp: Fn(&K) -> (Option<K>, ReduceT),
         RightOp: Fn(&K) -> (Option<K>, ReduceT)
@@ -141,7 +159,7 @@ impl<K: Clone + Eq + Hash> MapReduceSet<K> for im::HashSet<K> {
             }
             reduced = Some(reduce_op(reduced.take().unwrap(), op_result.1));
         });
-        right.iter().for_each(|rkey| {
+        right.into_iter().for_each(|rkey| {
             if self.find(rkey).is_none() {
                 let op_result = right_op(rkey);
                 if let Some(key) = op_result.0 {

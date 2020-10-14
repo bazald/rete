@@ -13,17 +13,30 @@ pub trait MapReduceMap<K: Eq + Hash, V> {
         ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
         Op: Fn((&K, &V)) -> (Option<(K, V)>, ReduceT);
 
-    fn joint_transform<ReduceT, ReduceOp, RightV, RightMap, BothOp, LeftOp, RightOp>
-        (&self, right: &RightMap, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
+    fn joint_transform<ReduceT, ReduceOp, RightV, RightT, BothOp, LeftOp, RightOp>
+        (&self, right: &RightT, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
         where
         Self: Sized,
         ReduceT: Default,
         ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
-        for<'i> &'i RightMap: IntoIterator<Item = (&'i K, &'i RightV)>,
-        RightMap: MapReduceMap<K, RightV>,
+        RightT: MapReduceMap<K, RightV>,
+        for<'i> &'i RightT: IntoIterator<Item = (&'i K, &'i RightV)>,
         BothOp: Fn((&K, &V), (&K, &RightV)) -> (Option<(K, V)>, ReduceT),
         LeftOp: Fn((&K, &V)) -> (Option<(K, V)>, ReduceT),
         RightOp: Fn((&K, &RightV)) -> (Option<(K, V)>, ReduceT);
+
+    fn xor<RightT>
+        (&self, right: &RightT) -> Self
+        where
+        Self: Sized,
+        K: Clone,
+        V: Clone,
+        RightT: MapReduceMap<K, V>,
+        for<'i> &'i RightT: IntoIterator<Item = (&'i K, &'i V)>,
+    {
+        let op = |(k, v) : (&K, &V)| (Some((k.clone(), v.clone())), ());
+        self.joint_transform(right, |_,_| (), |_,_| (None, ()), op, op).0
+    }
 }
 
 impl<K: Eq + Hash, V> MapReduceMap<K, V> for HashMap<K, V> {
@@ -54,13 +67,13 @@ impl<K: Eq + Hash, V> MapReduceMap<K, V> for HashMap<K, V> {
         (transformed, reduced.unwrap())
     }
 
-    fn joint_transform<ReduceT, ReduceOp, RightV, RightMap, BothOp, LeftOp, RightOp>
-        (&self, right: &RightMap, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
+    fn joint_transform<ReduceT, ReduceOp, RightV, RightT, BothOp, LeftOp, RightOp>
+        (&self, right: &RightT, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
         where
         ReduceT: Default,
         ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
-        for<'i> &'i RightMap: IntoIterator<Item = (&'i K, &'i RightV)>,
-        RightMap: MapReduceMap<K, RightV>,
+        RightT: MapReduceMap<K, RightV>,
+        for<'i> &'i RightT: IntoIterator<Item = (&'i K, &'i RightV)>,
         BothOp: Fn((&K, &V), (&K, &RightV)) -> (Option<(K, V)>, ReduceT),
         LeftOp: Fn((&K, &V)) -> (Option<(K, V)>, ReduceT),
         RightOp: Fn((&K, &RightV)) -> (Option<(K, V)>, ReduceT)
@@ -121,13 +134,13 @@ impl<K: Clone + Eq + Hash, V: Clone> MapReduceMap<K, V> for im::HashMap<K, V> {
         (transformed, reduced.unwrap())
     }
 
-    fn joint_transform<ReduceT, ReduceOp, RightV, RightMap, BothOp, LeftOp, RightOp>
-        (&self, right: &RightMap, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
+    fn joint_transform<ReduceT, ReduceOp, RightV, RightT, BothOp, LeftOp, RightOp>
+        (&self, right: &RightT, reduce_op: ReduceOp, both_op: BothOp, left_op: LeftOp, right_op: RightOp) -> (Self, ReduceT)
         where
         ReduceT: Default,
         ReduceOp: Fn(ReduceT, ReduceT) -> ReduceT,
-        for<'i> &'i RightMap: IntoIterator<Item = (&'i K, &'i RightV)>,
-        RightMap: MapReduceMap<K, RightV>,
+        RightT: MapReduceMap<K, RightV>,
+        for<'i> &'i RightT: IntoIterator<Item = (&'i K, &'i RightV)>,
         BothOp: Fn((&K, &V), (&K, &RightV)) -> (Option<(K, V)>, ReduceT),
         LeftOp: Fn((&K, &V)) -> (Option<(K, V)>, ReduceT),
         RightOp: Fn((&K, &RightV)) -> (Option<(K, V)>, ReduceT)
