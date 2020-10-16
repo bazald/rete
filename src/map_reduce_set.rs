@@ -26,15 +26,32 @@ pub trait MapReduceSet<K: Eq + Hash> {
         RightOp: Fn(&K) -> (Option<K>, ReduceT);
 
     fn xor<RightT>
-        (&self, right: &RightT) -> Self
+        (&self, right: &RightT) -> (Self, usize)
         where
         Self: Sized,
         K: Clone,
         RightT: MapReduceSet<K>,
         for<'i> &'i RightT: IntoIterator<Item = &'i K>,
     {
-        let op = |k: &K| (Some(k.clone()), ());
-        self.joint_transform(right, |_,_| (), |_,_| (None, ()), op, op).0
+        let op = |k: &K| (Some(k.clone()), 1);
+        self.joint_transform(right, |ls,rs| ls + rs, |_,_| (None, 0), op, op)
+    }
+
+    fn xor_subsets<SubK, RightT>
+        (&self, right: &RightT) -> (Self, usize)
+        where
+        Self: Sized,
+        SubK: Clone + Eq + Hash,
+        K: MapReduceSet<SubK> + Clone,
+        for<'i> &'i K: IntoIterator<Item = &'i SubK>,
+        RightT: MapReduceSet<K>,
+        for<'i> &'i RightT: IntoIterator<Item = &'i K>,
+    {
+        let op = |k: &K| (Some(k.clone()), 1);
+        self.joint_transform(right, |ls,rs| ls + rs, |ls: &K, rs: &K| {
+            let xored = ls.xor::<K>(rs);
+            if xored.1 == 0 { (None, 0) } else { (Some(xored.0), 1) }
+        }, op, op)
     }
 }
 

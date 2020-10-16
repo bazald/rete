@@ -1,3 +1,4 @@
+use super::map_reduce_set::MapReduceSet;
 use std::{collections::HashMap, hash::Hash};
 
 pub trait MapReduceMap<K: Eq + Hash, V> {
@@ -26,7 +27,7 @@ pub trait MapReduceMap<K: Eq + Hash, V> {
         RightOp: Fn((&K, &RightV)) -> (Option<(K, V)>, ReduceT);
 
     fn xor<RightT>
-        (&self, right: &RightT) -> Self
+        (&self, right: &RightT) -> (Self, usize)
         where
         Self: Sized,
         K: Clone,
@@ -34,8 +35,26 @@ pub trait MapReduceMap<K: Eq + Hash, V> {
         RightT: MapReduceMap<K, V>,
         for<'i> &'i RightT: IntoIterator<Item = (&'i K, &'i V)>,
     {
-        let op = |(k, v) : (&K, &V)| (Some((k.clone(), v.clone())), ());
-        self.joint_transform(right, |_,_| (), |_,_| (None, ()), op, op).0
+        let op = |(k, v) : (&K, &V)| (Some((k.clone(), v.clone())), 1);
+        self.joint_transform(right, |ls,rs| ls + rs, |_,_| (None, 0), op, op)
+    }
+
+    fn xor_subsets<SubK, RightT>
+        (&self, right: &RightT) -> (Self, usize)
+        where
+        Self: Sized,
+        K: Clone,
+        SubK: Clone + Eq + Hash,
+        V: MapReduceSet<SubK> + Clone,
+        for<'i> &'i V: IntoIterator<Item = &'i SubK>,
+        RightT: MapReduceMap<K, V>,
+        for<'i> &'i RightT: IntoIterator<Item = (&'i K, &'i V)>,
+    {
+        let op = |(k, v) : (&K, &V)| (Some((k.clone(), v.clone())), 1);
+        self.joint_transform(right, |ls,rs| ls + rs, |ls,rs| {
+            let xored = ls.1.xor(rs.1);
+            if xored.1 == 0 { (None, 0) } else { (Some((ls.0.clone(), xored.0)), 1) }
+        }, op, op)
     }
 }
 
