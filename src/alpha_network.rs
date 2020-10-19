@@ -1,11 +1,11 @@
-use crate::{map_reduce_map::MapReduceMap, map_reduce_set::MapReduceSet, symbol::Symbol, wme::{WME, WMEIndex}};
+use crate::{map_reduce_map::MapReduceMap, map_reduce_set::MapReduceSet};
+use crate::{node_id::{NodeId, NodeIdGenerator}, symbol::Symbol, wme::{WME, WMEIndex}};
 use im::{HashMap, HashSet};
-
-pub type NodeId = u64;
 
 pub type WorkingMemory = HashMap<WME, i64>;
 pub type WorkingMemoryDelta = HashMap<WME, i64>;
 
+pub type NodeIdSet = HashSet<NodeId>;
 pub type WMESet = HashSet<WME>;
 
 pub type AlphaMemories = HashMap<NodeId, WMESet>;
@@ -27,25 +27,26 @@ impl FilterTest {
     }
 }
 
-pub type FilterTests = HashMap<FilterTest, NodeId>;
+pub type FilterTests = HashMap<FilterTest, NodeIdSet>;
 pub type AlphaLinks = HashMap<NodeId, FilterTests>;
 
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Hash)]
 pub struct AlphaNetwork {
+    node_id_generator: NodeIdGenerator,
     working_memory: WorkingMemory,
-    alpha_memories: AlphaMemories,
-    first_filter_tests: FilterTests,
-    alpha_links_01: AlphaLinks,
-    alpha_links_12: AlphaLinks,
+    filter_tests_0: FilterTests,
+    filter_tests_1: AlphaLinks,
+    filter_tests_2: AlphaLinks,
 }
 
 impl AlphaNetwork {
     fn new() -> Self {
         AlphaNetwork {
+            node_id_generator: NodeIdGenerator::default(),
             working_memory: WorkingMemory::default(),
-            alpha_memories: AlphaMemories::default(),
-            first_filter_tests: FilterTests::default(),
-            alpha_links_01: AlphaLinks::default(),
-            alpha_links_12: AlphaLinks::default(),
+            filter_tests_0: FilterTests::default(),
+            filter_tests_1: AlphaLinks::default(),
+            filter_tests_2: AlphaLinks::default(),
       }
     }
 
@@ -75,26 +76,30 @@ impl AlphaNetwork {
     }
 
     fn calculate_first_filter_deltas(first_filter_tests: &FilterTests, alpha_delta: &AlphaMemoriesDelta0) -> AlphaMemoriesDelta12 {
-        let reduce = |lamd: AlphaMemoriesDelta12, ramd: AlphaMemoriesDelta12| lamd.union(ramd);
+        let reduce = |lamd: AlphaMemoriesDelta12, ramd: AlphaMemoriesDelta12| lamd.xor_subsets(&ramd).0;
         alpha_delta.transform(reduce, |wme| (None, {
             let mut am = AlphaMemories::default();
-            let insert = |am: AlphaMemories, dest_node_id, wme: WME| {
+            let insert = |am: AlphaMemories, dest_node_ids: &NodeIdSet, wme: &WME| {
                 let mut ami = AlphaMemories::default();
-                ami.insert(dest_node_id, {
-                    let mut wmes = WMESet::default();
-                    wmes.insert(wme);
-                    wmes
+                dest_node_ids.iter().for_each(|&dest_node_id| {
+                    ami = ami.update_with(dest_node_id, {
+                        let mut wmes = WMESet::default();
+                        wmes.insert(wme.clone());
+                        wmes
+                    }, |l,r| {
+                        l.union(r)
+                    });
                 });
                 am.xor(&ami) // as union
             };
-            if let Some(&dest_node_id) = first_filter_tests.get(&FilterTest::new(WMEIndex::Identifier, wme.at(WMEIndex::Identifier).clone())) {
-                am = insert(am, dest_node_id, wme.clone()).0;
+            if let Some(dest_node_ids) = first_filter_tests.get(&FilterTest::new(WMEIndex::Identifier, wme.at(WMEIndex::Identifier).clone())) {
+                am = insert(am, dest_node_ids, wme).0;
             }
-            if let Some(&dest_node_id) = first_filter_tests.get(&FilterTest::new(WMEIndex::Attribute, wme.at(WMEIndex::Attribute).clone())) {
-                am = insert(am, dest_node_id, wme.clone()).0;
+            if let Some(dest_node_ids) = first_filter_tests.get(&FilterTest::new(WMEIndex::Attribute, wme.at(WMEIndex::Attribute).clone())) {
+                am = insert(am, dest_node_ids, wme).0;
             }
-            if let Some(&dest_node_id) = first_filter_tests.get(&FilterTest::new(WMEIndex::Value, wme.at(WMEIndex::Value).clone())) {
-                am = insert(am, dest_node_id, wme.clone()).0;
+            if let Some(dest_node_ids) = first_filter_tests.get(&FilterTest::new(WMEIndex::Value, wme.at(WMEIndex::Value).clone())) {
+                am = insert(am, dest_node_ids, wme).0;
             }
             am
         })).1
@@ -104,7 +109,7 @@ impl AlphaNetwork {
         let reduce = |lamd: Option<AlphaMemoriesDelta12>, ramd: Option<AlphaMemoriesDelta12>| {
             if let Some(lamd) = lamd {
                 if let Some(ramd) = ramd {
-                    Some(lamd.union(ramd))
+                    Some(lamd.xor_subsets(&ramd).0)
                 }
                 else {
                     Some(lamd)
@@ -116,7 +121,7 @@ impl AlphaNetwork {
         };
         let amd = alpha_delta.transform(reduce, |(src_node_id, wmes)| (None, {
             if let Some(filter_tests) = alpha_links.get(src_node_id) {
-                filter_tests.transform(reduce, |(filter_test, &dest_node_id)| {(None, {
+                filter_tests.transform(reduce, |(filter_test, dest_node_ids)| {(None, {
                     let (wmes, non_empty) = wmes.transform(
                         |lb,rb| lb || rb,
                         |wme| {
@@ -130,7 +135,9 @@ impl AlphaNetwork {
                     );
                     if non_empty {
                         let mut amd = AlphaMemoriesDelta12::default();
-                        amd.insert(dest_node_id, wmes);
+                        dest_node_ids.iter().for_each(|&dest_node_id| {
+                            amd.insert(dest_node_id, wmes.clone());
+                        });
                         Some(amd)
                     }
                     else {
@@ -144,16 +151,32 @@ impl AlphaNetwork {
         })).1;
         amd.unwrap_or_default()
     }
+
+    fn next(&self, wm_delta: &WorkingMemoryDelta) -> (Self, AlphaMemoriesDelta12) {
+        let (working_memory, delta_0) = Self::update_working_memory(&self.working_memory, &wm_delta);
+        let delta_1 = Self::calculate_first_filter_deltas(&self.filter_tests_0, &delta_0);
+        let delta_2 = Self::calculate_alpha_link_deltas(&self.filter_tests_1, &delta_1);
+        let delta_3 = Self::calculate_alpha_link_deltas(&self.filter_tests_2, &delta_2);
+
+        (Self {
+            node_id_generator: self.node_id_generator.clone(),
+            working_memory,
+            filter_tests_0: self.filter_tests_0.clone(),
+            filter_tests_1: self.filter_tests_1.clone(),
+            filter_tests_2: self.filter_tests_2.clone(),
+        },
+        delta_3)
+    }
 }
 
 impl Default for AlphaNetwork {
     fn default() -> AlphaNetwork {
         AlphaNetwork {
+            node_id_generator: NodeIdGenerator::default(),
             working_memory: WorkingMemory::default(),
-            alpha_memories: AlphaMemories::default(),
-            first_filter_tests: FilterTests::default(),
-            alpha_links_01: AlphaLinks::default(),
-            alpha_links_12: AlphaLinks::default(),
+            filter_tests_0: FilterTests::default(),
+            filter_tests_1: AlphaLinks::default(),
+            filter_tests_2: AlphaLinks::default(),
         }
     }
 }
@@ -165,35 +188,57 @@ mod tests {
     #[test]
     fn alpha_network_test() {
         let mut alpha0 = AlphaNetwork::default();
-        alpha0.first_filter_tests.insert(FilterTest::new(WMEIndex::Value, Symbol::Integer(3)), 1);
-        alpha0.alpha_links_01.insert(1, {
+        let node0 = alpha0.node_id_generator.next();
+        let node1 = alpha0.node_id_generator.next();
+        let node2 = alpha0.node_id_generator.next();
+        for i in 3..7 {
+            alpha0.filter_tests_0.insert(FilterTest::new(WMEIndex::Value, Symbol::Integer(i)), NodeIdSet::new().update(node0));
+        }
+        alpha0.filter_tests_1.insert(node0, 
+            FilterTests::default().update(FilterTest::new(WMEIndex::Identifier, Symbol::Identifier("A1".into())), NodeIdSet::new().update(node1))
+        );
+        alpha0.filter_tests_2.insert(node1, {
             let mut links = FilterTests::default();
-            links.insert(FilterTest::new(WMEIndex::Value, Symbol::Integer(1)), 2);
-            links.insert(FilterTest::new(WMEIndex::Value, Symbol::Integer(3)), 3);
+            for i in 4..6 {
+                links.insert(FilterTest::new(WMEIndex::Value, Symbol::Integer(i)), NodeIdSet::new().update(node2));
+            }
             links
         });
 
-        let mut delta0 = WorkingMemoryDelta::default();
-        delta0.insert(WME::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(1)), -1);
-        delta0.insert(WME::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(2)), 0);
-        delta0.insert(WME::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(3)), 1);
+        let mut wm_delta = WorkingMemoryDelta::default();
+        wm_delta.insert(WME::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(1)), -1);
+        wm_delta.insert(WME::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(2)), 0);
+        for i in 3..10 {
+            wm_delta.insert(WME::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(i)), 1);
+        }
+        for i in 3..10 {
+            wm_delta.insert(WME::new(Symbol::Identifier("A2".into()), Symbol::String("value".into()), Symbol::Integer(i)), 1);
+        }
 
-        let (working_memory, delta1) = AlphaNetwork::update_working_memory(&alpha0.working_memory, &delta0);
+        let (working_memory, delta_0) = AlphaNetwork::update_working_memory(&alpha0.working_memory, &wm_delta);
 
-        assert_eq!(working_memory.len(), 2);
-        assert_eq!(delta1.len(), 1);
+        println!("AlphaNetwork Delta 0: {:?}\r\nAlphaNetwork WM: {:?}", delta_0, working_memory);
 
-        let delta1 = AlphaNetwork::calculate_first_filter_deltas(&alpha0.first_filter_tests, &delta1);
-        let alpha_memories1 = alpha0.alpha_memories.xor_subsets(&delta1).0; // insert or remove
+        assert_eq!(working_memory.len(), 15);
+        assert_eq!(delta_0.len(), 14);
 
-        let delta2 = AlphaNetwork::calculate_alpha_link_deltas(&alpha0.alpha_links_01, &delta1);
-        let alpha_memories2 = alpha0.alpha_memories.xor_subsets(&delta2).0; // insert or remove
+        let delta_1 = AlphaNetwork::calculate_first_filter_deltas(&alpha0.filter_tests_0, &delta_0);
+
+        println!("AlphaNetwork FFT: {:?}\r\n", alpha0.filter_tests_0);
+
+        println!("AlphaNetwork Delta 1: {:?}", delta_1);
+
+        let delta_2 = AlphaNetwork::calculate_alpha_link_deltas(&alpha0.filter_tests_1, &delta_1);
         
-        println!("AlphaNetwork WM: {:?}
-AlphaNetwork Updated WM: {:?}
-AlphaNetwork Delta1: {:?}
-AlphaNetwork AM1: {:?}
-AlphaNetwork Delta2: {:?}
-AlphaNetwork AM2: {:?}", working_memory, delta1, delta1, alpha_memories1, delta2, alpha_memories2);
+        println!("AlphaNetwork Delta 2: {:?}", delta_2);
+
+        let delta_3 = AlphaNetwork::calculate_alpha_link_deltas(&alpha0.filter_tests_2, &delta_2);
+        
+        println!("AlphaNetwork Delta 3: {:?}", delta_3);
+
+        let (next_alpha, next_delta) = alpha0.next(&wm_delta);
+
+        assert_eq!(next_alpha.working_memory, working_memory);
+        assert_eq!(next_delta, delta_3);
     }
 }

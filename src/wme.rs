@@ -1,14 +1,13 @@
 use crate::symbol::*;
 use std::fmt;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum WMEIndex {
     Identifier,
     Attribute,
     Value,
 }
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Hash)]
 pub struct WME {
     pub id: Symbol,
     pub attr: Symbol,

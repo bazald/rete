@@ -1,7 +1,7 @@
 use crate::float::Float;
 use core::fmt;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Hash)]
 pub enum Symbol {
     Integer(i64),
     Float(Float),
