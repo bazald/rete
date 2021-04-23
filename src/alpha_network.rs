@@ -1,25 +1,31 @@
 use crate::{map_reduce_map::MapReduceMap, map_reduce_set::MapReduceSet};
-use crate::{node_id::{NodeId, NodeIdGenerator}, symbol::Symbol, wme::{WME, WMEIndex}};
+use crate::{node_id::{NodeId, NodeIdGenerator}, symbol::Symbol, wme::{Wme, WmeIndex}};
 use im::{HashMap, HashSet};
 
-pub type WorkingMemory = HashMap<WME, i64>;
-pub type WorkingMemoryDelta = HashMap<WME, i64>;
+pub type WorkingMemory = HashMap<Wme, i64>;
+#[allow(dead_code)]
+pub type WorkingMemoryDelta = HashMap<Wme, i64>;
 
 pub type NodeIdSet = HashSet<NodeId>;
-pub type WMESet = HashSet<WME>;
+#[allow(dead_code)]
+pub type WmeSet = HashSet<Wme>;
 
-pub type AlphaMemories = HashMap<NodeId, WMESet>;
-pub type AlphaMemoriesDelta0 = WMESet;
-pub type AlphaMemoriesDelta12 = HashMap<NodeId, WMESet>;
+#[allow(dead_code)]
+pub type AlphaMemories = HashMap<NodeId, WmeSet>;
+#[allow(dead_code)]
+pub type AlphaMemoriesDelta0 = WmeSet;
+#[allow(dead_code)]
+pub type AlphaMemoriesDelta12 = HashMap<NodeId, WmeSet>;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd)]
 pub struct FilterTest {
-    wme_index: WMEIndex,
+    wme_index: WmeIndex,
     symbol: Symbol,
 }
 
+#[allow(dead_code)]
 impl FilterTest {
-    fn new(wme_index: WMEIndex, symbol: Symbol) -> FilterTest {
+    fn new(wme_index: WmeIndex, symbol: Symbol) -> FilterTest {
         FilterTest {
             wme_index,
             symbol,
@@ -39,6 +45,7 @@ pub struct AlphaNetwork {
     filter_tests_2: AlphaLinks,
 }
 
+#[allow(dead_code)]
 impl AlphaNetwork {
     fn new() -> Self {
         AlphaNetwork {
@@ -79,11 +86,11 @@ impl AlphaNetwork {
         let reduce = |lamd: AlphaMemoriesDelta12, ramd: AlphaMemoriesDelta12| lamd.xor_subsets(&ramd).0;
         alpha_delta.transform(reduce, |wme| (None, {
             let mut am = AlphaMemories::default();
-            let insert = |am: AlphaMemories, dest_node_ids: &NodeIdSet, wme: &WME| {
+            let insert = |am: AlphaMemories, dest_node_ids: &NodeIdSet, wme: &Wme| {
                 let mut ami = AlphaMemories::default();
                 dest_node_ids.iter().for_each(|&dest_node_id| {
                     ami = ami.update_with(dest_node_id, {
-                        let mut wmes = WMESet::default();
+                        let mut wmes = WmeSet::default();
                         wmes.insert(wme.clone());
                         wmes
                     }, |l,r| {
@@ -92,13 +99,13 @@ impl AlphaNetwork {
                 });
                 am.xor(&ami) // as union
             };
-            if let Some(dest_node_ids) = first_filter_tests.get(&FilterTest::new(WMEIndex::Identifier, wme.at(WMEIndex::Identifier).clone())) {
+            if let Some(dest_node_ids) = first_filter_tests.get(&FilterTest::new(WmeIndex::Identifier, wme.at(WmeIndex::Identifier).clone())) {
                 am = insert(am, dest_node_ids, wme).0;
             }
-            if let Some(dest_node_ids) = first_filter_tests.get(&FilterTest::new(WMEIndex::Attribute, wme.at(WMEIndex::Attribute).clone())) {
+            if let Some(dest_node_ids) = first_filter_tests.get(&FilterTest::new(WmeIndex::Attribute, wme.at(WmeIndex::Attribute).clone())) {
                 am = insert(am, dest_node_ids, wme).0;
             }
-            if let Some(dest_node_ids) = first_filter_tests.get(&FilterTest::new(WMEIndex::Value, wme.at(WMEIndex::Value).clone())) {
+            if let Some(dest_node_ids) = first_filter_tests.get(&FilterTest::new(WmeIndex::Value, wme.at(WmeIndex::Value).clone())) {
                 am = insert(am, dest_node_ids, wme).0;
             }
             am
@@ -192,27 +199,27 @@ mod tests {
         let node1 = alpha0.node_id_generator.next();
         let node2 = alpha0.node_id_generator.next();
         for i in 3..7 {
-            alpha0.filter_tests_0.insert(FilterTest::new(WMEIndex::Value, Symbol::Integer(i)), NodeIdSet::new().update(node0));
+            alpha0.filter_tests_0.insert(FilterTest::new(WmeIndex::Value, Symbol::Integer(i)), NodeIdSet::new().update(node0));
         }
         alpha0.filter_tests_1.insert(node0, 
-            FilterTests::default().update(FilterTest::new(WMEIndex::Identifier, Symbol::Identifier("A1".into())), NodeIdSet::new().update(node1))
+            FilterTests::default().update(FilterTest::new(WmeIndex::Identifier, Symbol::Identifier("A1".into())), NodeIdSet::new().update(node1))
         );
         alpha0.filter_tests_2.insert(node1, {
             let mut links = FilterTests::default();
             for i in 4..6 {
-                links.insert(FilterTest::new(WMEIndex::Value, Symbol::Integer(i)), NodeIdSet::new().update(node2));
+                links.insert(FilterTest::new(WmeIndex::Value, Symbol::Integer(i)), NodeIdSet::new().update(node2));
             }
             links
         });
 
         let mut wm_delta = WorkingMemoryDelta::default();
-        wm_delta.insert(WME::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(1)), -1);
-        wm_delta.insert(WME::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(2)), 0);
+        wm_delta.insert(Wme::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(1)), -1);
+        wm_delta.insert(Wme::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(2)), 0);
         for i in 3..10 {
-            wm_delta.insert(WME::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(i)), 1);
+            wm_delta.insert(Wme::new(Symbol::Identifier("A1".into()), Symbol::String("value".into()), Symbol::Integer(i)), 1);
         }
         for i in 3..10 {
-            wm_delta.insert(WME::new(Symbol::Identifier("A2".into()), Symbol::String("value".into()), Symbol::Integer(i)), 1);
+            wm_delta.insert(Wme::new(Symbol::Identifier("A2".into()), Symbol::String("value".into()), Symbol::Integer(i)), 1);
         }
 
         let (working_memory, delta_0) = AlphaNetwork::update_working_memory(&alpha0.working_memory, &wm_delta);

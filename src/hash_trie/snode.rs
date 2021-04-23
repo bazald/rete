@@ -1,11 +1,12 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
-pub(super) struct SNode<T: PartialEq> {
+pub(super) struct SNode<T: Clone + PartialEq> {
     pub value: T
 }
 
-impl<T: PartialEq> SNode<T> {
+#[allow(dead_code)]
+impl<T: Clone + PartialEq> SNode<T> {
     fn new(value: T) -> Self {
         Self {
             value
@@ -13,6 +14,7 @@ impl<T: PartialEq> SNode<T> {
     }
 }
 
-fn new<T: PartialEq>(value: T) -> Rc<SNode<T>> {
-    Rc::new(SNode::new(value))
+#[allow(dead_code)]
+fn new<T: Clone + PartialEq>(value: T) -> Arc<SNode<T>> {
+    Arc::new(SNode::new(value))
 }

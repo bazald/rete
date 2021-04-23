@@ -7,75 +7,96 @@ pub(super) struct LNode<T: Clone + PartialEq> {
     pub size: u64,
 }
 
+#[allow(dead_code)]
 impl<T: Clone + PartialEq> LNode<T> {
-    fn has_next(&self, next: &Option<Arc<LNode<T>>>) -> bool {
-        match &self.next {
-            Some(sn) => match next {
-                Some(n) => Arc::ptr_eq(sn, n),
-                None => false,
-            },
-            None => next.is_none(),
-        }
-    }
-}
-
-impl<T: Clone + PartialEq> LNode<T> {
-    fn new(value: T, next: Option<Arc<Self>>) -> Self {
-        let size = match &next {
-            Some(ln) => 1 + ln.size,
-            None => 1,
-        };
+    fn new_tail(value: T) -> Self {
         Self {
             value,
-            next,
+            next: None,
+            size: 1,
+        }
+    }
+
+    fn new(value: T, next: Arc<Self>) -> Self {
+        let size = 1 + next.size;
+        Self {
+            value,
+            next: Some(next),
             size,
         }
     }
 }
 
-fn new<T: Clone + PartialEq>(value: T, next: Option<Arc<LNode<T>>>) -> Option<Arc<LNode<T>>> {
-    Some(Arc::new(LNode::new(value, next)))
+#[allow(dead_code)]
+fn new_tail<T: Clone + PartialEq>(value: T) -> Arc<LNode<T>> {
+    Arc::new(LNode::new_tail(value))
 }
 
-fn find_in_lnode<T: Clone + PartialEq>(ln: &Option<Arc<LNode<T>>>, value: &T) -> Option<Arc<LNode<T>>> {
-    if ln.is_none() {
-        return None;
-    }
+#[allow(dead_code)]
+fn new<T: Clone + PartialEq>(value: T, next: Arc<LNode<T>>) -> Arc<LNode<T>> {
+    Arc::new(LNode::new(value, next))
+}
 
-    let ln = ln.as_ref().unwrap();
-    if ln.value == *value {
-        Some(ln.clone())
-    }
-    else {
-        find_in_lnode(&ln.next, value)
+#[allow(dead_code)]
+fn find<T: Clone + PartialEq>(mut ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
+    loop {
+        if ln.value == *value {
+            return Some(ln.clone());
+        }
+        else if let Some(next) = &ln.next {
+            ln = next;
+        }
+        else {
+            return None;
+        }
     }
 }
 
-fn insert_in_lnode<T: Clone + PartialEq>(ln: &Option<Arc<LNode<T>>>, value: Cow<T>) -> Arc<LNode<T>> {
-    match find_in_lnode(ln, value.as_ref()) {
-        Some(_) => ln.as_ref().unwrap().clone(),
-        None => Arc::new(LNode::new(value.into_owned(), ln.clone())),
+#[allow(dead_code)]
+fn insert<T: Clone + PartialEq>(ln: &Arc<LNode<T>>, value: Cow<T>) -> Arc<LNode<T>> {
+    match find(ln, value.as_ref()) {
+        Some(_) => ln.clone(),
+        None => new(value.into_owned(), ln.clone()),
     }
 }
 
-fn remove_from_lnode<T: Clone + PartialEq>(ln: &Option<Arc<LNode<T>>>, value: &T) -> Option<Arc<LNode<T>>> {
-    if ln.is_none() {
-        return None;
-    }
-
-    let ln = ln.as_ref().unwrap();
+#[allow(dead_code)]
+fn remove<T: Clone + PartialEq>(ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
     if ln.value == *value {
         ln.next.clone()
     }
     else {
-        let found = remove_from_lnode(&ln.next, value);
-        if ln.has_next(&found) {
-            Some(ln.clone())
-        }
-        else {
-            Some(Arc::new(LNode::new(ln.value.clone(), found)))
-        }
+        Some(
+            if let Some(next) = &ln.next {
+                match remove(next, value) {
+                    Some(lnode) => if Arc::ptr_eq(next, &lnode) {
+                        ln.clone()
+                    }
+                    else {
+                        new(ln.value.clone(), lnode)
+                    },
+                    None => new_tail(ln.value.clone())
+                }
+            }
+            else {
+                ln.clone()
+            }
+        )
     }
+}
+
+#[allow(unused_macros)]
+macro_rules! lnode {
+    ( $value:expr ) => {
+        {
+            new_tail($value)
+        }
+    };
+    ( $value:expr, $($rest:expr),+ ) => {
+        {
+            new($value, lnode!($($rest),*))    
+        }
+    };
 }
 
 #[cfg(test)]
@@ -84,65 +105,51 @@ mod tests {
 
     #[test]
     fn lnode_insert_3() {
-        let mut ln = new(1, None);
-        ln = new(2, ln);
-        ln = new(3, ln);
-        assert_eq!(ln.as_ref().unwrap().size, 3);
-        assert_eq!(find_in_lnode(&ln, &1).unwrap().value, 1);
-        assert_eq!(find_in_lnode(&ln, &2).unwrap().value, 2);
-        assert_eq!(find_in_lnode(&ln, &3).unwrap().value, 3);
-        assert_eq!(find_in_lnode(&ln, &4).is_none(), true);
+        let ln = lnode!(3, 2, 1);
+        assert_eq!(ln.size, 3);
+        assert_eq!(find(&ln, &1).unwrap().value, 1);
+        assert_eq!(find(&ln, &2).unwrap().value, 2);
+        assert_eq!(find(&ln, &3).unwrap().value, 3);
+        assert!(find(&ln, &4).is_none());
     }
 
     #[test]
     fn lnode_insert_3_again() {
-        let mut ln = Some(insert_in_lnode(&None, Cow::Owned(1)));
-        ln = insert_in_lnode(&ln, Cow::Owned(2)).into();
-        ln = insert_in_lnode(&ln, Cow::Owned(3)).into();
-        ln = insert_in_lnode(&ln, Cow::Owned(1)).into();
-        assert_eq!(ln.as_ref().unwrap().size, 3);
-        assert_eq!(find_in_lnode(&ln, &1).unwrap().value, 1);
-        assert_eq!(find_in_lnode(&ln, &2).unwrap().value, 2);
-        assert_eq!(find_in_lnode(&ln, &3).unwrap().value, 3);
-        assert_eq!(find_in_lnode(&ln, &4).is_none(), true);
+        let ln = insert(&lnode!(3, 2, 1), Cow::Owned(3));
+        assert_eq!(ln.size, 3);
+        assert_eq!(find(&ln, &1).unwrap().value, 1);
+        assert_eq!(find(&ln, &2).unwrap().value, 2);
+        assert_eq!(find(&ln, &3).unwrap().value, 3);
+        assert!(find(&ln, &4).is_none());
     }
 
     #[test]
     fn lnode_remove_1() {
-        let mut ln = new(1, None);
-        ln = new(2, ln);
-        ln = new(3, ln);
-        ln = remove_from_lnode(&ln, &1);
-        assert_eq!(ln.as_ref().unwrap().size, 2);
-        assert_eq!(find_in_lnode(&ln, &1).is_none(), true);
-        assert_eq!(find_in_lnode(&ln, &2).unwrap().value, 2);
-        assert_eq!(find_in_lnode(&ln, &3).unwrap().value, 3);
-        assert_eq!(find_in_lnode(&ln, &4).is_none(), true);
+        let ln = remove(&lnode!(3, 2, 1), &1).unwrap();
+        assert_eq!(ln.size, 2);
+        assert!(find(&ln, &1).is_none());
+        assert_eq!(find(&ln, &2).unwrap().value, 2);
+        assert_eq!(find(&ln, &3).unwrap().value, 3);
+        assert!(find(&ln, &4).is_none());
     }
 
     #[test]
     fn lnode_remove_2() {
-        let mut ln = new(1, None);
-        ln = new(2, ln);
-        ln = new(3, ln);
-        ln = remove_from_lnode(&ln, &2);
-        assert_eq!(ln.as_ref().unwrap().size, 2);
-        assert_eq!(find_in_lnode(&ln, &1).unwrap().value, 1);
-        assert_eq!(find_in_lnode(&ln, &2).is_none(), true);
-        assert_eq!(find_in_lnode(&ln, &3).unwrap().value, 3);
-        assert_eq!(find_in_lnode(&ln, &4).is_none(), true);
+        let ln = remove(&lnode!(3, 2, 1), &2).unwrap();
+        assert_eq!(ln.size, 2);
+        assert_eq!(find(&ln, &1).unwrap().value, 1);
+        assert!(find(&ln, &2).is_none());
+        assert_eq!(find(&ln, &3).unwrap().value, 3);
+        assert!(find(&ln, &4).is_none());
     }
 
     #[test]
     fn lnode_remove_3() {
-        let mut ln = new(1, None);
-        ln = new(2, ln);
-        ln = new(3, ln);
-        ln = remove_from_lnode(&ln, &3);
-        assert_eq!(ln.as_ref().unwrap().size, 2);
-        assert_eq!(find_in_lnode(&ln, &1).unwrap().value, 1);
-        assert_eq!(find_in_lnode(&ln, &2).unwrap().value, 2);
-        assert_eq!(find_in_lnode(&ln, &3).is_none(), true);
-        assert_eq!(find_in_lnode(&ln, &4).is_none(), true);
+        let ln = remove(&lnode!(3, 2, 1), &3).unwrap();
+        assert_eq!(ln.size, 2);
+        assert_eq!(find(&ln, &1).unwrap().value, 1);
+        assert_eq!(find(&ln, &2).unwrap().value, 2);
+        assert!(find(&ln, &3).is_none());
+        assert!(find(&ln, &4).is_none());
     }
 }

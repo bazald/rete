@@ -1,13 +1,13 @@
 use crate::float::Float;
 use core::fmt;
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Hash)]
 pub enum Symbol {
     Integer(i64),
     Float(Float),
     String(String),
     Identifier(String),
-    Variable(String),
 }
 
 impl fmt::Display for Symbol {
@@ -16,8 +16,7 @@ impl fmt::Display for Symbol {
             Symbol::Integer(ii) => write!(f, "{}", ii),
             Symbol::Float(ff) => write!(f, "{}", ff),
             Symbol::String(ss) => write!(f, "\"{}\"", ss),
-            Symbol::Identifier(id) => write!(f, ">{}<", id),
-            Symbol::Variable(va) => write!(f, "<{}>", va),
+            Symbol::Identifier(va) => write!(f, "[{}]", va),
         }
     }
 }
@@ -31,6 +30,11 @@ impl From<i64> for Symbol {
 impl From<f64> for Symbol {
     fn from(value: f64) -> Self {
         Symbol::Float(value.into())
+    }
+}
+impl From<Float> for Symbol {
+    fn from(value: Float) -> Self {
+        Symbol::Float(value)
     }
 }
 
@@ -57,10 +61,7 @@ mod tests {
         let ss_sym = Symbol::from("Hello, world!");
         assert_eq!(ss_sym.to_string(), "\"Hello, world!\"");
         
-        let id_sym = Symbol::Identifier("HW".into());
-        assert_eq!(id_sym.to_string(), ">HW<");
-        
-        let va_sym = Symbol::Variable("hello-world".into());
-        assert_eq!(va_sym.to_string(), "<hello-world>");
+        let id_sym = Symbol::Identifier("hello-world".into());
+        assert_eq!(id_sym.to_string(), "[hello-world]");
     }
 }

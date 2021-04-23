@@ -5,6 +5,7 @@ pub(super) struct NodeIdGenerator {
     node_id: NodeId,
 }
 
+#[allow(dead_code)]
 impl NodeIdGenerator {
     pub fn new() -> NodeIdGenerator {
         NodeIdGenerator {
