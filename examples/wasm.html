@@ -4,12 +4,18 @@
   </head>
   <script type="module" src="./rete.js"></script>
   <script type="module">
-    import init, {greet} from './rete.js'
+    import init, {WorkerPool, rete_init, greet, par_sum} from './rete.js'
 
     async function run() {
       await init();
-
-      greet("world");
+      await rete_init();
+      let workerPool = new WorkerPool(navigator.hardwareConcurrency);
+      let data = [];
+      for (let i = 0; i != 1024; ++i) {
+        data.push(i);
+      }
+      let sum = await par_sum(4, workerPool, data);
+      log("Sum is " + sum);
     }
 
     run();
