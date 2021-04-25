@@ -1,10 +1,14 @@
 #[allow(unused_imports)]
 use super::{cnode::*, lnode::LNode, snode::SNode};
-use alloc::sync::Arc;
+use alloc::fmt::{self, Debug, Formatter};
+use core::hash::Hash;
 
-#[allow(dead_code)]
-pub(super) enum MNode<T: Clone + PartialEq> {
-    C(Arc<LNode<T>>),
-    L(Arc<LNode<T>>),
-    S(Arc<SNode<T>>),
+pub(super) trait MNode <T: Clone + Eq + PartialEq + Hash> {
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error>;
+}
+
+impl <T: Clone + Eq + PartialEq + Hash> Debug for dyn MNode<T> {
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
+        self.fmt(formatter)
+    }
 }

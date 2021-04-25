@@ -1,12 +1,12 @@
 use alloc::sync::Arc;
 
-#[derive(Debug, PartialEq)]
-pub(super) struct SNode<T: Clone + PartialEq> {
-    pub value: T
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct SNode<T: Clone> {
+    pub value: T,
 }
 
 #[allow(dead_code)]
-impl<T: Clone + PartialEq> SNode<T> {
+impl<T: Clone> SNode<T> {
     fn new(value: T) -> Self {
         Self {
             value
@@ -15,6 +15,6 @@ impl<T: Clone + PartialEq> SNode<T> {
 }
 
 #[allow(dead_code)]
-fn new<T: Clone + PartialEq>(value: T) -> Arc<SNode<T>> {
+fn new<T: Clone>(value: T) -> Arc<SNode<T>> {
     Arc::new(SNode::new(value))
 }

@@ -1,14 +1,14 @@
 use alloc::{borrow::Cow, sync::Arc};
 
-#[derive(Debug)]
-pub(super) struct LNode<T: Clone + PartialEq> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct LNode<T: Clone + Eq + PartialEq> {
     pub value: T,
     pub next: Option<Arc<LNode<T>>>,
     pub size: u64,
 }
 
 #[allow(dead_code)]
-impl<T: Clone + PartialEq> LNode<T> {
+impl<T: Clone + Eq + PartialEq> LNode<T> {
     fn new_tail(value: T) -> Self {
         Self {
             value,
@@ -28,17 +28,17 @@ impl<T: Clone + PartialEq> LNode<T> {
 }
 
 #[allow(dead_code)]
-fn new_tail<T: Clone + PartialEq>(value: T) -> Arc<LNode<T>> {
+fn new_tail<T: Clone + Eq + PartialEq>(value: T) -> Arc<LNode<T>> {
     Arc::new(LNode::new_tail(value))
 }
 
 #[allow(dead_code)]
-fn new<T: Clone + PartialEq>(value: T, next: Arc<LNode<T>>) -> Arc<LNode<T>> {
+fn new<T: Clone + Eq + PartialEq>(value: T, next: Arc<LNode<T>>) -> Arc<LNode<T>> {
     Arc::new(LNode::new(value, next))
 }
 
 #[allow(dead_code)]
-fn find<T: Clone + PartialEq>(mut ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
+fn find<T: Clone + Eq + PartialEq>(mut ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
     loop {
         if ln.value == *value {
             return Some(ln.clone());
@@ -53,7 +53,7 @@ fn find<T: Clone + PartialEq>(mut ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<L
 }
 
 #[allow(dead_code)]
-fn insert<T: Clone + PartialEq>(ln: &Arc<LNode<T>>, value: Cow<T>) -> Arc<LNode<T>> {
+fn insert<T: Clone + Eq + PartialEq>(ln: &Arc<LNode<T>>, value: Cow<T>) -> Arc<LNode<T>> {
     match find(ln, value.as_ref()) {
         Some(_) => ln.clone(),
         None => new(value.into_owned(), ln.clone()),
@@ -61,7 +61,7 @@ fn insert<T: Clone + PartialEq>(ln: &Arc<LNode<T>>, value: Cow<T>) -> Arc<LNode<
 }
 
 #[allow(dead_code)]
-fn remove<T: Clone + PartialEq>(ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
+fn remove<T: Clone + Eq + PartialEq>(ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
     if ln.value == *value {
         ln.next.clone()
     }

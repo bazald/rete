@@ -1,5 +1,6 @@
 use super::mnode::MNode;
-use core::{cmp::min, mem::size_of, ops::*};
+use alloc::sync::Arc;
+use core::{cmp::min, hash::Hash, mem::size_of, ops::*};
 
 const fn log2(value: u128) -> u128 {
     let mut result: u32 = 1;
@@ -79,13 +80,13 @@ index!(usize);
 
 trait CNode {}
 
-struct CNodeImpl<T: Clone + PartialEq, IndexType: CNodeIndex, const SIZE: usize> {
+struct CNodeImpl<T: Clone + Eq + PartialEq + Hash, IndexType: CNodeIndex, const SIZE: usize> {
     index: IndexType,
-    nodes: [MNode<T>; SIZE],
+    nodes: [Arc<dyn MNode<T>>; SIZE],
 }
 
-impl<T: Clone + PartialEq, Index: CNodeIndex, const SIZE: usize> CNodeImpl<T, Index, SIZE> {
-    fn new(index: Index, nodes: [MNode<T>; SIZE]) -> Result<Self, ()> {
+impl<T: Clone + Eq + PartialEq + Hash, Index: CNodeIndex, const SIZE: usize> CNodeImpl<T, Index, SIZE> {
+    fn new(index: Index, nodes: [Arc<dyn MNode<T>>; SIZE]) -> Result<Self, ()> {
         if index.num_entries() != SIZE {
             return Err(());
         }
@@ -93,7 +94,7 @@ impl<T: Clone + PartialEq, Index: CNodeIndex, const SIZE: usize> CNodeImpl<T, In
     }
 }
 
-impl<T: Clone + PartialEq, Index: CNodeIndex, const SIZE: usize> CNode
+impl<T: Clone + Eq + PartialEq + Hash, Index: CNodeIndex, const SIZE: usize> CNode
     for CNodeImpl<T, Index, SIZE>
 {
 }
