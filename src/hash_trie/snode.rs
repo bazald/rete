@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 #[derive(Debug, PartialEq)]
 pub(super) struct SNode<T: Clone + PartialEq> {

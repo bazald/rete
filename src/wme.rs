@@ -1,5 +1,5 @@
 use crate::symbol::*;
-use std::fmt;
+use core::fmt;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -42,6 +42,7 @@ impl fmt::Display for Wme {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use super::*;
 
     #[test]

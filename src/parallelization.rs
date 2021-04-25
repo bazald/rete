@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use std::time::SystemTime;
+    use std::{time::SystemTime, println, vec::Vec};
     use rayon::iter::*;
 
     #[test]

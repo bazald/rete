@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use alloc::{borrow::Cow, sync::Arc};
 
 #[derive(Debug)]
 pub(super) struct LNode<T: Clone + PartialEq> {

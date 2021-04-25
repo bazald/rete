@@ -1,5 +1,6 @@
 use super::map_reduce_set::MapReduceSet;
-use std::{collections::HashMap, hash::Hash};
+use core::hash::Hash;
+use hashbrown::HashMap;
 
 pub trait MapReduceMap<K: Eq + Hash, V> {
     fn find(&self, key: &K) -> Option<(&'_ K, &'_ V)>;
@@ -125,6 +126,7 @@ impl<K: Eq + Hash, V> MapReduceMap<K, V> for HashMap<K, V> {
     }
 }
 
+#[cfg(feature = "im-rs")]
 impl<K: Clone + Eq + Hash, V: Clone> MapReduceMap<K, V> for im::HashMap<K, V> {
     fn find<'a>(&self, key: &K) -> Option<(&'_ K, &'_ V)> {
         self.iter().find(|k| *(*k).0 == *key)
@@ -195,6 +197,7 @@ impl<K: Clone + Eq + Hash, V: Clone> MapReduceMap<K, V> for im::HashMap<K, V> {
 #[cfg(test)]
 mod tests {
     use rand::distributions::{Distribution, Uniform};
+    use std::println;
     use super::*;
 
     #[test]

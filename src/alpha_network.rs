@@ -1,5 +1,7 @@
 use crate::{map_reduce_map::MapReduceMap, map_reduce_set::MapReduceSet};
 use crate::{node_id::{NodeId, NodeIdGenerator}, symbol::Symbol, wme::{Wme, WmeIndex}};
+
+#[cfg(feature = "im-rs")]
 use im::{HashMap, HashSet};
 
 pub type WorkingMemory = HashMap<Wme, i64>;
@@ -190,6 +192,7 @@ impl Default for AlphaNetwork {
 
 #[cfg(test)]
 mod tests {
+    use std::println;
     use super::*;
 
     #[test]

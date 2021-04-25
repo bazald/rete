@@ -1,4 +1,5 @@
-use std::{collections::HashSet, hash::Hash};
+use core::hash::Hash;
+use hashbrown::HashSet;
 
 pub trait MapReduceSet<K: Eq + Hash> {
     fn find(&self, key: &K) -> Option<&'_ K>;
@@ -122,6 +123,7 @@ impl<K: Eq + Hash> MapReduceSet<K> for HashSet<K> {
     }
 }
 
+#[cfg(feature = "im-rs")]
 impl<K: Clone + Eq + Hash> MapReduceSet<K> for im::HashSet<K> {
     fn find<'a>(&self, key: &K) -> Option<&'_ K> {
         self.iter().find(|k| **k == *key)
@@ -192,7 +194,7 @@ impl<K: Clone + Eq + Hash> MapReduceSet<K> for im::HashSet<K> {
 #[cfg(test)]
 mod tests {
     use rand::distributions::{Distribution, Uniform};
-    use std::collections::HashSet;
+    use std::println;
     use super::*;
 
     #[test]

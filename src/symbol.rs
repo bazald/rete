@@ -1,4 +1,5 @@
 use crate::float::Float;
+use alloc::string::String;
 use core::fmt;
 
 #[allow(dead_code)]
@@ -51,6 +52,7 @@ impl From<String> for Symbol {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use super::*;
 
     #[test]
