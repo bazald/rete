@@ -1,44 +1,34 @@
 use alloc::{borrow::Cow, sync::Arc};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct LNode<T: Clone + Eq + PartialEq> {
+pub(super) struct LNode<T: Clone + Eq + PartialEq + 'static> {
     pub value: T,
     pub next: Option<Arc<LNode<T>>>,
     pub size: u64,
 }
 
 #[allow(dead_code)]
-impl<T: Clone + Eq + PartialEq> LNode<T> {
-    fn new_tail(value: T) -> Self {
-        Self {
+impl<T: Clone + Eq + PartialEq + 'static> LNode<T> {
+    fn new_tail(value: T) -> Arc<Self> {
+        Arc::new(Self {
             value,
             next: None,
             size: 1,
-        }
+        })
     }
 
-    fn new(value: T, next: Arc<Self>) -> Self {
+    fn new(value: T, next: Arc<Self>) -> Arc<Self> {
         let size = 1 + next.size;
-        Self {
+        Arc::new(Self {
             value,
             next: Some(next),
             size,
-        }
+        })
     }
 }
 
 #[allow(dead_code)]
-fn new_tail<T: Clone + Eq + PartialEq>(value: T) -> Arc<LNode<T>> {
-    Arc::new(LNode::new_tail(value))
-}
-
-#[allow(dead_code)]
-fn new<T: Clone + Eq + PartialEq>(value: T, next: Arc<LNode<T>>) -> Arc<LNode<T>> {
-    Arc::new(LNode::new(value, next))
-}
-
-#[allow(dead_code)]
-fn find<T: Clone + Eq + PartialEq>(mut ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
+fn find<T: Clone + Eq + PartialEq + 'static>(mut ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
     loop {
         if ln.value == *value {
             return Some(ln.clone());
@@ -53,15 +43,15 @@ fn find<T: Clone + Eq + PartialEq>(mut ln: &Arc<LNode<T>>, value: &T) -> Option<
 }
 
 #[allow(dead_code)]
-fn insert<T: Clone + Eq + PartialEq>(ln: &Arc<LNode<T>>, value: Cow<T>) -> Arc<LNode<T>> {
+fn insert<T: Clone + Eq + PartialEq + 'static>(ln: &Arc<LNode<T>>, value: Cow<T>) -> Arc<LNode<T>> {
     match find(ln, value.as_ref()) {
         Some(_) => ln.clone(),
-        None => new(value.into_owned(), ln.clone()),
+        None => LNode::new(value.into_owned(), ln.clone()),
     }
 }
 
 #[allow(dead_code)]
-fn remove<T: Clone + Eq + PartialEq>(ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
+fn remove<T: Clone + Eq + PartialEq + 'static>(ln: &Arc<LNode<T>>, value: &T) -> Option<Arc<LNode<T>>> {
     if ln.value == *value {
         ln.next.clone()
     }
@@ -73,9 +63,9 @@ fn remove<T: Clone + Eq + PartialEq>(ln: &Arc<LNode<T>>, value: &T) -> Option<Ar
                         ln.clone()
                     }
                     else {
-                        new(ln.value.clone(), lnode)
+                        LNode::new(ln.value.clone(), lnode)
                     },
-                    None => new_tail(ln.value.clone())
+                    None => LNode::new_tail(ln.value.clone())
                 }
             }
             else {
@@ -89,12 +79,12 @@ fn remove<T: Clone + Eq + PartialEq>(ln: &Arc<LNode<T>>, value: &T) -> Option<Ar
 macro_rules! lnode {
     ( $value:expr ) => {
         {
-            new_tail($value)
+            LNode::new_tail($value)
         }
     };
     ( $value:expr, $($rest:expr),+ ) => {
         {
-            new($value, lnode!($($rest),*))    
+            LNode::new($value, lnode!($($rest),*))    
         }
     };
 }

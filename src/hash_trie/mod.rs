@@ -3,36 +3,62 @@ mod lnode;
 mod mnode;
 mod snode;
 
-use alloc::sync::Arc;
-use core::{hash::Hash, ptr};
-use mnode::MNode;
+use alloc::{borrow::Cow, fmt::Debug, sync::Arc};
+use core::hash::Hash;
+use mnode::*;
+use snode::SNode;
 
-#[derive(Debug)]
-pub struct HashTrie <T: Clone + Eq + PartialEq + Hash> {
+#[derive(Debug, Eq, PartialEq)]
+pub struct HashTrie <T: Clone + Debug + Eq + PartialEq + Hash + 'static> {
     root: Option<Arc<dyn MNode<T>>>,
 }
 
-impl <T: Clone + Eq + PartialEq + Hash> HashTrie<T> {
+impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> HashTrie<T> {
     fn new() -> Self {
         Self {
             root: None
         }
     }
 
-    fn find(&self, value: T) -> Option<&T> {
-        None
+    fn singleton(mnode: Arc<dyn MNode<T>>) -> Self {
+        Self {
+            root: Some(mnode)
+        }
     }
 
-    fn insert(&self, value: T) -> Self {
-        self.clone()
+    #[allow(dead_code)]
+    fn find(&self, value: &T) -> Option<&T> {
+        match &self.root {
+            Some(root) => match root.find(value) {
+                FindResult::NotFound => None,
+                FindResult::Found(found) => Some(found)
+            },
+            None => None
+        }
     }
 
-    fn remove(&self, value: T) -> Self {
-        self.clone()
+    #[allow(dead_code)]
+    fn insert<'a>(&'a self, value: Cow<T>) -> (Self, &'a T) {
+        match &self.root {
+            Some(root) => match root.insert(value) {
+                InsertResult::Found(found) => (Self::singleton(root.clone()), found),
+                InsertResult::Inserted(mnode, inserted) => (Self::singleton(mnode), inserted)
+            },
+            None => {
+                let created = Self::singleton(SNode::new(value.into_owned()));
+                let snode = unsafe { (Arc::as_ptr(created.root.as_ref().unwrap()) as *const SNode<T>).as_ref().unwrap() };
+                (created, snode.get())
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    fn remove(&self, value: &T) -> Self {
+        self.clone() // TOOD: actually do removal
     }
 }
 
-impl <T: Clone + Eq + PartialEq + Hash> Clone for HashTrie<T> {
+impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> Clone for HashTrie<T> {
     fn clone(&self) -> Self {
         Self {
             root: match &self.root {
@@ -43,22 +69,8 @@ impl <T: Clone + Eq + PartialEq + Hash> Clone for HashTrie<T> {
     }
 }
 
-impl <T: Clone + Eq + PartialEq + Hash> Default for HashTrie<T> {
+impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> Default for HashTrie<T> {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl <T: Clone + Eq + PartialEq + Hash> Eq for HashTrie<T> {}
-
-impl <T: Clone + Eq + PartialEq + Hash> PartialEq<HashTrie<T>> for HashTrie<T> {
-    fn eq(&self, other: &Self) -> bool {
-        match &self.root {
-            Some(left) => match &other.root {
-                Some(right) => ptr::eq(Arc::as_ptr(left) as *const u8, Arc::as_ptr(right) as *const u8),
-                None => false
-            },
-            None => other.root.is_none()
-        }
     }
 }

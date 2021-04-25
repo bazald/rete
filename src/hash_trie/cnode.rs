@@ -80,8 +80,9 @@ index!(usize);
 
 trait CNode {}
 
-struct CNodeImpl<T: Clone + Eq + PartialEq + Hash, IndexType: CNodeIndex, const SIZE: usize> {
-    index: IndexType,
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CNodeImpl<T: Clone + Eq + PartialEq + Hash + 'static, Index: CNodeIndex, const SIZE: usize> {
+    index: Index,
     nodes: [Arc<dyn MNode<T>>; SIZE],
 }
 
@@ -94,8 +95,7 @@ impl<T: Clone + Eq + PartialEq + Hash, Index: CNodeIndex, const SIZE: usize> CNo
     }
 }
 
-impl<T: Clone + Eq + PartialEq + Hash, Index: CNodeIndex, const SIZE: usize> CNode
-    for CNodeImpl<T, Index, SIZE>
+impl<T: Clone + Eq + PartialEq + Hash + 'static, Index: CNodeIndex, const SIZE: usize> CNode for CNodeImpl<T, Index, SIZE>
 {
 }
 
