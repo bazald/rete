@@ -1,25 +1,34 @@
+use crate::bit_indexed_array::*;
+use super::{cnode::*, flag::*, mnode::*, traits::*};
 use alloc::{borrow::Cow, fmt::{self, Debug, Formatter}, sync::Arc};
-use core::hash::Hash;
-use super::mnode::*;
+use core::ops::*;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct SNode<T: Clone + 'static> {
-    pub value: T,
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct SNode<V: Value> {
+    pub value: V,
 }
 
 #[allow(dead_code)]
-impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> SNode<T> {
-    pub(super) fn new(value: T) -> Arc<SNode<T>> {
-        Arc::new(Self {value})
+impl <V: Value> SNode<V> {
+    pub(super) fn new(value: V) -> Self {
+        Self {value}
     }
 
-    pub(super) fn get(&self) -> &T {
+    pub(super) fn get(&self) -> &V {
         &self.value
     }
 }
 
-impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> MNode<T> for SNode<T> {
-    fn find<'a>(&'a self, value: &T) -> FindResult<'a, T> {
+impl <B: BitAnd + BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + Default + From<<B as BitAnd>::Output> + From<<B as Shr<usize>>::Output> + Into<usize> + LogB<B> + MaskLogB<B> + NthBit<B> + NthOne<B> + PartialEq + Shr<usize> + 'static, V: Value> MNode<B, V> for SNode<V> {
+    fn size(&self) -> usize {
+        1
+    }
+
+    fn is_cnode(&self) -> bool {
+        false
+    }
+
+    fn find<'a>(&'a self, value: &V, _flag: Option<Flag<B>>) -> FindResult<'a, V> {
         if self.value == *value {
             FindResult::Found(&self.value)
         }
@@ -28,18 +37,19 @@ impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> MNode<T> for SNode<T> 
         }
     }
 
-    fn insert<'a>(&'a self, value: Cow<T>) -> InsertResult<'a, T> {
+    fn insert<'a>(&'a self, value: Cow<V>, _flag: Option<Flag<B>>) -> InsertResult<'a, B, V> {
         if self.value == *value {
             InsertResult::Found(&self.value)
         }
         else {
-            InsertResult::Inserted(SNode::<T>::new(value.into_owned()), &self.value) // TODO: Actually do insertion
+            let inserted = Self::new(value.into_owned());
+            InsertResult::Inserted(Arc::new(inserted)) // TODO: Actually do insertion with CNode/LNode split possibility
         }
     }
 
-    fn remove<'a>(&'a self, value: &T) -> RemoveResult<'a, T> {
+    fn remove<'a>(&'a self, value: &V, _flag: Option<Flag<B>>) -> RemoveResult<'a, B, V> {
         if self.value == *value {
-            RemoveResult::FoundInSNode(&self.value)
+            RemoveResult::Removed(Arc::new(CNode::<B, V>::default()), &self.value)
         }
         else {
             RemoveResult::NotFound

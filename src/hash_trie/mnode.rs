@@ -1,42 +1,64 @@
 #[allow(unused_imports)]
-use super::{cnode::*, lnode::LNode, snode::SNode};
+use super::{cnode::*, flag::*, lnode::LNode, snode::SNode, traits::*};
 use alloc::{borrow::Cow, fmt::{self, Debug, Formatter}, sync::Arc};
-use core::{hash::Hash, ptr};
+use core::ptr;
 
-pub(super) enum FindResult<'a, T> {
+pub(super) enum FindResult<'a, V> {
     NotFound,
-    Found(&'a T),
+    Found(&'a V),
 }
 
-pub(super) enum InsertResult<'a, T> {
-    Found(&'a T),
-    Inserted(Arc<dyn MNode<T>>, &'a T),
+pub(super) enum InsertResult<'a, B, V> {
+    Found(&'a V),
+    Inserted(Arc<dyn MNode<B, V>>),
 }
 
-pub(super) enum RemoveResult<'a, T> {
+pub(super) enum RemoveResult<'a, B, V> {
     NotFound,
-    Found(Arc<dyn MNode<T>>, &'a T),
-    FoundInSNode(&'a T),
+    Removed(Arc<dyn MNode<B, V>>, &'a V),
 }
 
-pub(super) trait MNode <T: Clone + Debug + Eq + PartialEq + Hash + 'static> {
-    fn find<'a>(&'a self, value: &T) -> FindResult<T>;
-    fn insert<'a>(&'a self, value: Cow<T>) -> InsertResult<T>;
-    fn remove<'a>(&'a self, value: &T) -> RemoveResult<T>;
+pub(super) trait MNode <B, V: Clone> {
+    fn size(&self) -> usize;
+    fn is_cnode(&self) -> bool;
+
+    fn find<'a>(&'a self, value: &V, flag: Option<Flag<B>>) -> FindResult<V>;
+    fn insert<'a>(&'a self, value: Cow<V>, flag: Option<Flag<B>>) -> InsertResult<B, V>;
+    fn remove<'a>(&'a self, value: &V, flag: Option<Flag<B>>) -> RemoveResult<B, V>;
 
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error>;
 }
 
-impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> Debug for dyn MNode<T> {
+impl <B, V: Clone> Debug for dyn MNode<B, V> {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
         self.fmt(formatter)
     }
 }
 
-impl <T: Clone + Eq + PartialEq + Hash + 'static> Eq for dyn MNode<T> {}
+impl <B, V: Value> Eq for dyn MNode<B, V> {}
 
-impl <T: Clone + Eq + PartialEq + Hash + 'static> PartialEq<dyn MNode<T>> for dyn MNode<T> {
+impl <B, V: Value> PartialEq for dyn MNode<B, V> {
     fn eq(&self, other: &Self) -> bool {
-        ptr::eq(self as *const dyn MNode<T> as *const u8, other as *const dyn MNode<T> as *const u8)
+        ptr::eq(self as *const dyn MNode<B, V> as *const u8, other as *const dyn MNode<B, V> as *const u8)
     }
+}
+
+#[allow(unused_macros)]
+macro_rules! assert_found_eq {
+    ( $found:expr, $expected:expr ) => {
+        match $found {
+            FindResult::Found(reference) => assert_eq!(*reference, $expected),
+            FindResult::NotFound => panic!()
+        }
+    };
+}
+
+#[allow(unused_macros)]
+macro_rules! assert_found_none {
+    ( $found:expr ) => {
+        match $found {
+            FindResult::Found(_reference) => panic!(),
+            FindResult::NotFound => {}
+        }
+    };
 }

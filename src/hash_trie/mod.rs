@@ -1,76 +1,85 @@
+mod flag;
+mod traits;
+#[macro_use]
+mod mnode;
 mod cnode;
 mod lnode;
-mod mnode;
 mod snode;
 
-use alloc::{borrow::Cow, fmt::Debug, sync::Arc};
-use core::hash::Hash;
+use crate::bit_indexed_array::*;
+use cnode::*;
+use flag::*;
 use mnode::*;
-use snode::SNode;
+use traits::*;
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct HashTrie <T: Clone + Debug + Eq + PartialEq + Hash + 'static> {
-    root: Option<Arc<dyn MNode<T>>>,
+use alloc::{borrow::Cow, fmt::{Debug, Formatter}, sync::Arc};
+use core::{ops::*, ptr};
+
+pub struct HashTrie <B, V> {
+    root: Arc<dyn MNode<B, V>>,
 }
 
-impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> HashTrie<T> {
+impl <B: BitAnd + BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + Default + From<<B as BitAnd>::Output> + From<<B as Shr<usize>>::Output> + Into<usize> + LogB<B> + MaskLogB<B> + NthBit<B> + NthOne<B> + PartialEq + Shr<usize> + 'static, V: Value> HashTrie<B, V> {
     fn new() -> Self {
         Self {
-            root: None
+            root: Arc::new(CNode::<B, V>::default())
         }
     }
 
-    fn singleton(mnode: Arc<dyn MNode<T>>) -> Self {
+    fn singleton(mnode: Arc<dyn MNode<B, V>>) -> Self {
         Self {
-            root: Some(mnode)
+            root: mnode
         }
     }
 
     #[allow(dead_code)]
-    fn find(&self, value: &T) -> Option<&T> {
-        match &self.root {
-            Some(root) => match root.find(value) {
-                FindResult::NotFound => None,
-                FindResult::Found(found) => Some(found)
-            },
-            None => None
+    fn find<H: HasherBv<B, V>>(&self, value: &V) -> Result<&V, ()> {
+        match self.root.find(value, Some(Flag::new(H::default().hash(value)))) {
+            FindResult::NotFound => Err(()),
+            FindResult::Found(found) => Ok(found)
         }
     }
 
     #[allow(dead_code)]
-    fn insert<'a>(&'a self, value: Cow<T>) -> (Self, &'a T) {
-        match &self.root {
-            Some(root) => match root.insert(value) {
-                InsertResult::Found(found) => (Self::singleton(root.clone()), found),
-                InsertResult::Inserted(mnode, inserted) => (Self::singleton(mnode), inserted)
-            },
-            None => {
-                let created = Self::singleton(SNode::new(value.into_owned()));
-                let snode = unsafe { (Arc::as_ptr(created.root.as_ref().unwrap()) as *const SNode<T>).as_ref().unwrap() };
-                (created, snode.get())
-            }
+    fn insert<H: HasherBv<B, V>>(&self, value: Cow<V>) -> Result<Self, &V> { // TODO: Audit lifetime checks on returned value ref
+        let flag = Flag::from(H::default().hash(value.as_ref()));
+        match self.root.insert(value, Some(flag)) {
+            InsertResult::Found(found) => Err(found),
+            InsertResult::Inserted(mnode) => Ok(Self::singleton(mnode))
         }
     }
 
     #[allow(dead_code)]
-    fn remove(&self, value: &T) -> Self {
-        self.clone() // TOOD: actually do removal
+    fn remove<H: HasherBv<B, V>>(&self, value: &V) -> Result<(Self, Option<&V>), ()> { // TODO: Audit lifetime checks on returned value ref
+        match self.root.remove(value, Some(Flag::from(H::default().hash(value)))) {
+            RemoveResult::NotFound => Err(()),
+            RemoveResult::Removed(mnode, removed) => Ok((Self::singleton(mnode), Some(removed)))
+        }
     }
 }
 
-impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> Clone for HashTrie<T> {
+impl <B: BitAnd + BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + Default + From<<B as BitAnd>::Output> + From<<B as Shr<usize>>::Output> + Into<usize> + LogB<B> + MaskLogB<B> + NthBit<B> + NthOne<B> + PartialEq + Shr<usize> + 'static, V: Value> Clone for HashTrie<B, V> {
     fn clone(&self) -> Self {
-        Self {
-            root: match &self.root {
-                Some(mnode) => Some(mnode.clone()),
-                None => None
-            }
-        }
+        Self::singleton(self.root.clone())
     }
 }
 
-impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> Default for HashTrie<T> {
+impl <B: BitAnd + BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + Default + From<<B as BitAnd>::Output> + From<<B as Shr<usize>>::Output> + Into<usize> + LogB<B> + MaskLogB<B> + NthBit<B> + NthOne<B> + PartialEq + Shr<usize> + 'static, V: Value> Default for HashTrie<B, V> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl <B: Eq, V: Clone + Eq> Eq for HashTrie<B, V> {}
+
+impl <B, V: Clone> PartialEq for HashTrie<B, V> {
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(self.root.as_ref() as *const dyn MNode<B, V> as *const u8, other.root.as_ref() as *const dyn MNode<B, V> as *const u8)
+    }
+}
+
+impl <B: Debug, V: Clone + Debug> Debug for HashTrie<B, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::result::Result<(), core::fmt::Error> {
+        write!(f, "HashTrie {{ root: {:?} }}", self.root)
     }
 }
