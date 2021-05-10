@@ -71,13 +71,14 @@ impl NthOne<u64> for u64 { fn nth_one(&self, n: usize) -> Result<usize, ()> {if 
 impl NthOne<u128> for u128 { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..128 {if self & (1_u128 << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
 impl NthOne<usize> for usize { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..(8 * mem::size_of::<usize>()) {if self & (1_usize << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
 
-struct BitIndexedArrayImpl <B, V, const SIZE: usize> {
+struct BitIndexedArrayImpl <B, V, E, const SIZE: usize> {
     bits: B,
     values: [V; SIZE],
+    extra: E,
 }
 
-impl<B: CountOnes<B>, V, const SIZE: usize> BitIndexedArrayImpl<B, V, SIZE> {
-    fn new(bits: B, values: impl Into<VecDeque<V>>) -> Result<Self, ()> {
+impl<B: CountOnes<B>, V, E, const SIZE: usize> BitIndexedArrayImpl<B, V, E, SIZE> {
+    fn new(bits: B, values: impl Into<VecDeque<V>>, extra: E) -> Result<Self, ()> {
         let mut values: VecDeque<V> = values.into();
         if bits.count_ones_t() != SIZE || values.len() != SIZE {
             return Err(());
@@ -90,25 +91,26 @@ impl<B: CountOnes<B>, V, const SIZE: usize> BitIndexedArrayImpl<B, V, SIZE> {
             }
             building
         };
-        Ok(Self { bits, values })
+        Ok(Self { bits, values, extra })
     }
 }
 
-pub trait BitIndexedArray<B, V: Clone> {
+pub trait BitIndexedArray<B, V: Clone, E: Clone> {
     fn bits(&self) -> B;
     fn len(&self) -> usize;
+    fn extra(&self) -> &E;
 
     fn at(&self, bit: B) -> Result<&V, ()>;
     fn at_index(&self, index: usize) -> Result<&V, ()>;
-    fn inserted(&self, bit: B, value: Cow<V>) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()>;
-    fn inserted_index(&self, index: usize, value: Cow<V>) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()>;
-    fn updated(&self, bit: B, value: Cow<V>) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()>;
-    fn updated_index(&self, index: usize, value: Cow<V>) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()>;
-    fn removed(&self, bit: B) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()>;
-    fn removed_index(&self, index: usize) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()>;
+    fn inserted(&self, bit: B, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()>;
+    fn inserted_index(&self, index: usize, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()>;
+    fn updated(&self, bit: B, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()>;
+    fn updated_index(&self, index: usize, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()>;
+    fn removed(&self, bit: B, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()>;
+    fn removed_index(&self, index: usize, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()>;
 
-    fn clone_impl(&self) -> Box<dyn BitIndexedArray::<B, V>>;
-    fn eq_impl(&self, other: &dyn BitIndexedArray::<B, V>) -> bool;
+    fn clone_impl(&self) -> Box<dyn BitIndexedArray::<B, V, E>>;
+    fn eq_impl(&self, other: &dyn BitIndexedArray::<B, V, E>) -> bool;
     fn fmt_impl(&self, f: &mut Formatter<'_>) -> core::result::Result<(), core::fmt::Error>;
     
     fn iter(&'_ self) -> core::slice::Iter<'_, V>;
@@ -116,13 +118,17 @@ pub trait BitIndexedArray<B, V: Clone> {
 }
 macro_rules! bit_indexed_array_t {
     ( $size:literal ) => {
-        impl <B: BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + NthBit<B> + NthOne<B> + PartialEq + 'static, V: Clone + Debug + PartialEq + 'static> BitIndexedArray<B, V> for BitIndexedArrayImpl<B, V, $size> {
+        impl <B: BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + NthBit<B> + NthOne<B> + PartialEq + 'static, V: Clone + Debug + PartialEq + 'static, E: Clone + Debug + Default + PartialEq + 'static> BitIndexedArray<B, V, E> for BitIndexedArrayImpl<B, V, E, $size> {
             fn bits(&self) -> B {
                 self.bits.clone()
             }
 
             fn len(&self) -> usize {
                 $size
+            }
+
+            fn extra(&self) -> &E {
+                &self.extra
             }
 
             fn at(&self, bit: B) -> Result<&V, ()> {
@@ -140,7 +146,7 @@ macro_rules! bit_indexed_array_t {
                 Ok(&self.values[self.bits.bit_index(B::nth_bit(index)?)?])
             }
 
-            fn inserted(&self, bit: B, value: Cow<V>) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()> {
+            fn inserted(&self, bit: B, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
                 let bits = self.bits.bit_insert(bit.clone())?;
                 let index = bits.bit_index(bit)?;
                 let mut building = VecDeque::<V>::new();
@@ -151,14 +157,14 @@ macro_rules! bit_indexed_array_t {
                 for i in index..$size {
                     building.push_back(self.values[i].clone());
                 }
-                new_bit_indexed_array(bits, building)
+                new_bit_indexed_array(bits, building, extra.into_owned())
             }
 
-            fn inserted_index(&self, index: usize, value: Cow<V>) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()> {
-                self.inserted(B::nth_bit(index)?, value)
+            fn inserted_index(&self, index: usize, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
+                self.inserted(B::nth_bit(index)?, value, extra)
             }
             
-            fn updated(&self, bit: B, value: Cow<V>) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()> {
+            fn updated(&self, bit: B, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
                 if !self.bits.bit_contains(bit.clone())? {
                     return Err(());
                 }
@@ -171,14 +177,14 @@ macro_rules! bit_indexed_array_t {
                 for i in index+1..$size {
                     building.push_back(self.values[i].clone());
                 }
-                new_bit_indexed_array(self.bits.clone(), building)
+                new_bit_indexed_array(self.bits.clone(), building, extra.into_owned())
             }
 
-            fn updated_index(&self, index: usize, value: Cow<V>) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()> {
-                self.updated(B::nth_bit(index)?, value)
+            fn updated_index(&self, index: usize, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
+                self.updated(B::nth_bit(index)?, value, extra)
             }
             
-            fn removed(&self, bit: B) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()> {
+            fn removed(&self, bit: B, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
                 let bits = self.bits.bit_remove(bit.clone())?;
                 let index = self.bits.bit_index(bit)?;
                 let mut building = VecDeque::<V>::new();
@@ -188,25 +194,26 @@ macro_rules! bit_indexed_array_t {
                 for i in index+1..$size {
                     building.push_back(self.values[i].clone());
                 }
-                new_bit_indexed_array(bits, building)
+                new_bit_indexed_array(bits, building, extra.into_owned())
             }
             
-            fn removed_index(&self, index: usize) -> Result<Box<dyn BitIndexedArray::<B, V>>, ()> {
-                self.removed(B::nth_bit(index)?)
+            fn removed_index(&self, index: usize, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
+                self.removed(B::nth_bit(index)?, extra)
             }
             
-            fn clone_impl(&self) -> Box<dyn BitIndexedArray::<B, V>> {
+            fn clone_impl(&self) -> Box<dyn BitIndexedArray::<B, V, E>> {
                 Box::new(Self {
                     bits: self.bits.clone(),
                     values: self.values.clone(),
+                    extra: self.extra.clone(),
                 })
             }
             
-            fn eq_impl(&self, other: &dyn BitIndexedArray::<B, V>) -> bool {
+            fn eq_impl(&self, other: &dyn BitIndexedArray::<B, V, E>) -> bool {
                 if self.len() != other.len() {
                     return false;
                 }
-                let other = unsafe { &*(other as *const dyn BitIndexedArray::<B, V> as *const Self) };
+                let other = unsafe { &*(other as *const dyn BitIndexedArray::<B, V, E> as *const Self) };
                 self.bits == other.bits && self.values == other.values
             }
             
@@ -234,188 +241,189 @@ bit_indexed_array_t!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1
     96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128);
 
 #[allow(dead_code)]
-pub fn default_bit_indexed_array<B: BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + Default + NthBit<B> + NthOne<B> + PartialEq + 'static, V: Clone + Debug + PartialEq + 'static>() -> Box<dyn BitIndexedArray<B, V>> {
-    Box::new(BitIndexedArrayImpl::<B, V, 0>::default())
+pub fn default_bit_indexed_array<B: BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + Default + NthBit<B> + NthOne<B> + PartialEq + 'static, V: Clone + Debug + PartialEq + 'static, E: Clone + Debug + Default + PartialEq + 'static>() -> Box<dyn BitIndexedArray<B, V, E>> {
+    Box::new(BitIndexedArrayImpl::<B, V, E, 0>::default())
 }
 
 #[allow(dead_code)]
-pub fn new_bit_indexed_array<B: BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + NthBit<B> + NthOne<B> + PartialEq + 'static, V: Clone + Debug + PartialEq + 'static>(bits: B, values: impl Into<VecDeque<V>>) -> Result<Box<dyn BitIndexedArray<B, V>>, ()> {
+pub fn new_bit_indexed_array<B: BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + NthBit<B> + NthOne<B> + PartialEq + 'static, V: Clone + Debug + PartialEq + 'static, E: Clone + Debug + Default + PartialEq + 'static>(bits: B, values: impl Into<VecDeque<V>>, extra: E) -> Result<Box<dyn BitIndexedArray<B, V, E>>, ()> {
     let values: VecDeque<V> = values.into();
     if bits.count_ones_t() != values.len() {
         return Err(());
     }
     match values.len() {
-        0 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 0>::new(bits, values).unwrap())),
-        1 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 1>::new(bits, values).unwrap())),
-        2 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 2>::new(bits, values).unwrap())),
-        3 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 3>::new(bits, values).unwrap())),
-        4 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 4>::new(bits, values).unwrap())),
-        5 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 5>::new(bits, values).unwrap())),
-        6 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 6>::new(bits, values).unwrap())),
-        7 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 7>::new(bits, values).unwrap())),
-        8 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 8>::new(bits, values).unwrap())),
-        9 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 9>::new(bits, values).unwrap())),
-        10 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 10>::new(bits, values).unwrap())),
-        11 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 11>::new(bits, values).unwrap())),
-        12 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 12>::new(bits, values).unwrap())),
-        13 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 13>::new(bits, values).unwrap())),
-        14 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 14>::new(bits, values).unwrap())),
-        15 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 15>::new(bits, values).unwrap())),
-        16 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 16>::new(bits, values).unwrap())),
-        17 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 17>::new(bits, values).unwrap())),
-        18 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 18>::new(bits, values).unwrap())),
-        19 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 19>::new(bits, values).unwrap())),
-        20 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 20>::new(bits, values).unwrap())),
-        21 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 21>::new(bits, values).unwrap())),
-        22 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 22>::new(bits, values).unwrap())),
-        23 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 23>::new(bits, values).unwrap())),
-        24 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 24>::new(bits, values).unwrap())),
-        25 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 25>::new(bits, values).unwrap())),
-        26 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 26>::new(bits, values).unwrap())),
-        27 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 27>::new(bits, values).unwrap())),
-        28 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 28>::new(bits, values).unwrap())),
-        29 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 29>::new(bits, values).unwrap())),
-        30 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 30>::new(bits, values).unwrap())),
-        31 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 31>::new(bits, values).unwrap())),
-        32 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 32>::new(bits, values).unwrap())),
-        33 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 33>::new(bits, values).unwrap())),
-        34 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 34>::new(bits, values).unwrap())),
-        35 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 35>::new(bits, values).unwrap())),
-        36 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 36>::new(bits, values).unwrap())),
-        37 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 37>::new(bits, values).unwrap())),
-        38 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 38>::new(bits, values).unwrap())),
-        39 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 39>::new(bits, values).unwrap())),
-        40 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 40>::new(bits, values).unwrap())),
-        41 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 41>::new(bits, values).unwrap())),
-        42 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 42>::new(bits, values).unwrap())),
-        43 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 43>::new(bits, values).unwrap())),
-        44 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 44>::new(bits, values).unwrap())),
-        45 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 45>::new(bits, values).unwrap())),
-        46 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 46>::new(bits, values).unwrap())),
-        47 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 47>::new(bits, values).unwrap())),
-        48 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 48>::new(bits, values).unwrap())),
-        49 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 49>::new(bits, values).unwrap())),
-        50 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 50>::new(bits, values).unwrap())),
-        51 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 51>::new(bits, values).unwrap())),
-        52 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 52>::new(bits, values).unwrap())),
-        53 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 53>::new(bits, values).unwrap())),
-        54 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 54>::new(bits, values).unwrap())),
-        55 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 55>::new(bits, values).unwrap())),
-        56 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 56>::new(bits, values).unwrap())),
-        57 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 57>::new(bits, values).unwrap())),
-        58 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 58>::new(bits, values).unwrap())),
-        59 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 59>::new(bits, values).unwrap())),
-        60 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 60>::new(bits, values).unwrap())),
-        61 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 61>::new(bits, values).unwrap())),
-        62 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 62>::new(bits, values).unwrap())),
-        63 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 63>::new(bits, values).unwrap())),
-        64 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 64>::new(bits, values).unwrap())),
-        65 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 65>::new(bits, values).unwrap())),
-        66 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 66>::new(bits, values).unwrap())),
-        67 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 67>::new(bits, values).unwrap())),
-        68 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 68>::new(bits, values).unwrap())),
-        69 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 69>::new(bits, values).unwrap())),
-        70 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 70>::new(bits, values).unwrap())),
-        71 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 71>::new(bits, values).unwrap())),
-        72 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 72>::new(bits, values).unwrap())),
-        73 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 73>::new(bits, values).unwrap())),
-        74 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 74>::new(bits, values).unwrap())),
-        75 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 75>::new(bits, values).unwrap())),
-        76 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 76>::new(bits, values).unwrap())),
-        77 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 77>::new(bits, values).unwrap())),
-        78 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 78>::new(bits, values).unwrap())),
-        79 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 79>::new(bits, values).unwrap())),
-        80 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 80>::new(bits, values).unwrap())),
-        81 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 81>::new(bits, values).unwrap())),
-        82 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 82>::new(bits, values).unwrap())),
-        83 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 83>::new(bits, values).unwrap())),
-        84 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 84>::new(bits, values).unwrap())),
-        85 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 85>::new(bits, values).unwrap())),
-        86 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 86>::new(bits, values).unwrap())),
-        87 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 87>::new(bits, values).unwrap())),
-        88 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 88>::new(bits, values).unwrap())),
-        89 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 89>::new(bits, values).unwrap())),
-        90 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 90>::new(bits, values).unwrap())),
-        91 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 91>::new(bits, values).unwrap())),
-        92 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 92>::new(bits, values).unwrap())),
-        93 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 93>::new(bits, values).unwrap())),
-        94 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 94>::new(bits, values).unwrap())),
-        95 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 95>::new(bits, values).unwrap())),
-        96 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 96>::new(bits, values).unwrap())),
-        97 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 97>::new(bits, values).unwrap())),
-        98 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 98>::new(bits, values).unwrap())),
-        99 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 99>::new(bits, values).unwrap())),
-        100 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 100>::new(bits, values).unwrap())),
-        101 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 101>::new(bits, values).unwrap())),
-        102 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 102>::new(bits, values).unwrap())),
-        103 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 103>::new(bits, values).unwrap())),
-        104 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 104>::new(bits, values).unwrap())),
-        105 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 105>::new(bits, values).unwrap())),
-        106 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 106>::new(bits, values).unwrap())),
-        107 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 107>::new(bits, values).unwrap())),
-        108 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 108>::new(bits, values).unwrap())),
-        109 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 109>::new(bits, values).unwrap())),
-        110 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 110>::new(bits, values).unwrap())),
-        111 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 111>::new(bits, values).unwrap())),
-        112 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 112>::new(bits, values).unwrap())),
-        113 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 113>::new(bits, values).unwrap())),
-        114 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 114>::new(bits, values).unwrap())),
-        115 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 115>::new(bits, values).unwrap())),
-        116 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 116>::new(bits, values).unwrap())),
-        117 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 117>::new(bits, values).unwrap())),
-        118 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 118>::new(bits, values).unwrap())),
-        119 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 119>::new(bits, values).unwrap())),
-        120 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 120>::new(bits, values).unwrap())),
-        121 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 121>::new(bits, values).unwrap())),
-        122 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 122>::new(bits, values).unwrap())),
-        123 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 123>::new(bits, values).unwrap())),
-        124 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 124>::new(bits, values).unwrap())),
-        125 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 125>::new(bits, values).unwrap())),
-        126 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 126>::new(bits, values).unwrap())),
-        127 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 127>::new(bits, values).unwrap())),
-        128 => Ok(Box::new(BitIndexedArrayImpl::<B, V, 128>::new(bits, values).unwrap())),
+        0 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 0>::new(bits, values, extra).unwrap())),
+        1 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 1>::new(bits, values, extra).unwrap())),
+        2 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 2>::new(bits, values, extra).unwrap())),
+        3 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 3>::new(bits, values, extra).unwrap())),
+        4 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 4>::new(bits, values, extra).unwrap())),
+        5 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 5>::new(bits, values, extra).unwrap())),
+        6 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 6>::new(bits, values, extra).unwrap())),
+        7 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 7>::new(bits, values, extra).unwrap())),
+        8 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 8>::new(bits, values, extra).unwrap())),
+        9 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 9>::new(bits, values, extra).unwrap())),
+        10 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 10>::new(bits, values, extra).unwrap())),
+        11 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 11>::new(bits, values, extra).unwrap())),
+        12 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 12>::new(bits, values, extra).unwrap())),
+        13 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 13>::new(bits, values, extra).unwrap())),
+        14 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 14>::new(bits, values, extra).unwrap())),
+        15 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 15>::new(bits, values, extra).unwrap())),
+        16 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 16>::new(bits, values, extra).unwrap())),
+        17 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 17>::new(bits, values, extra).unwrap())),
+        18 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 18>::new(bits, values, extra).unwrap())),
+        19 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 19>::new(bits, values, extra).unwrap())),
+        20 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 20>::new(bits, values, extra).unwrap())),
+        21 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 21>::new(bits, values, extra).unwrap())),
+        22 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 22>::new(bits, values, extra).unwrap())),
+        23 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 23>::new(bits, values, extra).unwrap())),
+        24 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 24>::new(bits, values, extra).unwrap())),
+        25 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 25>::new(bits, values, extra).unwrap())),
+        26 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 26>::new(bits, values, extra).unwrap())),
+        27 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 27>::new(bits, values, extra).unwrap())),
+        28 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 28>::new(bits, values, extra).unwrap())),
+        29 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 29>::new(bits, values, extra).unwrap())),
+        30 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 30>::new(bits, values, extra).unwrap())),
+        31 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 31>::new(bits, values, extra).unwrap())),
+        32 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 32>::new(bits, values, extra).unwrap())),
+        33 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 33>::new(bits, values, extra).unwrap())),
+        34 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 34>::new(bits, values, extra).unwrap())),
+        35 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 35>::new(bits, values, extra).unwrap())),
+        36 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 36>::new(bits, values, extra).unwrap())),
+        37 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 37>::new(bits, values, extra).unwrap())),
+        38 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 38>::new(bits, values, extra).unwrap())),
+        39 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 39>::new(bits, values, extra).unwrap())),
+        40 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 40>::new(bits, values, extra).unwrap())),
+        41 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 41>::new(bits, values, extra).unwrap())),
+        42 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 42>::new(bits, values, extra).unwrap())),
+        43 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 43>::new(bits, values, extra).unwrap())),
+        44 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 44>::new(bits, values, extra).unwrap())),
+        45 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 45>::new(bits, values, extra).unwrap())),
+        46 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 46>::new(bits, values, extra).unwrap())),
+        47 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 47>::new(bits, values, extra).unwrap())),
+        48 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 48>::new(bits, values, extra).unwrap())),
+        49 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 49>::new(bits, values, extra).unwrap())),
+        50 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 50>::new(bits, values, extra).unwrap())),
+        51 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 51>::new(bits, values, extra).unwrap())),
+        52 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 52>::new(bits, values, extra).unwrap())),
+        53 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 53>::new(bits, values, extra).unwrap())),
+        54 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 54>::new(bits, values, extra).unwrap())),
+        55 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 55>::new(bits, values, extra).unwrap())),
+        56 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 56>::new(bits, values, extra).unwrap())),
+        57 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 57>::new(bits, values, extra).unwrap())),
+        58 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 58>::new(bits, values, extra).unwrap())),
+        59 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 59>::new(bits, values, extra).unwrap())),
+        60 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 60>::new(bits, values, extra).unwrap())),
+        61 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 61>::new(bits, values, extra).unwrap())),
+        62 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 62>::new(bits, values, extra).unwrap())),
+        63 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 63>::new(bits, values, extra).unwrap())),
+        64 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 64>::new(bits, values, extra).unwrap())),
+        65 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 65>::new(bits, values, extra).unwrap())),
+        66 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 66>::new(bits, values, extra).unwrap())),
+        67 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 67>::new(bits, values, extra).unwrap())),
+        68 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 68>::new(bits, values, extra).unwrap())),
+        69 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 69>::new(bits, values, extra).unwrap())),
+        70 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 70>::new(bits, values, extra).unwrap())),
+        71 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 71>::new(bits, values, extra).unwrap())),
+        72 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 72>::new(bits, values, extra).unwrap())),
+        73 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 73>::new(bits, values, extra).unwrap())),
+        74 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 74>::new(bits, values, extra).unwrap())),
+        75 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 75>::new(bits, values, extra).unwrap())),
+        76 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 76>::new(bits, values, extra).unwrap())),
+        77 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 77>::new(bits, values, extra).unwrap())),
+        78 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 78>::new(bits, values, extra).unwrap())),
+        79 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 79>::new(bits, values, extra).unwrap())),
+        80 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 80>::new(bits, values, extra).unwrap())),
+        81 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 81>::new(bits, values, extra).unwrap())),
+        82 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 82>::new(bits, values, extra).unwrap())),
+        83 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 83>::new(bits, values, extra).unwrap())),
+        84 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 84>::new(bits, values, extra).unwrap())),
+        85 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 85>::new(bits, values, extra).unwrap())),
+        86 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 86>::new(bits, values, extra).unwrap())),
+        87 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 87>::new(bits, values, extra).unwrap())),
+        88 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 88>::new(bits, values, extra).unwrap())),
+        89 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 89>::new(bits, values, extra).unwrap())),
+        90 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 90>::new(bits, values, extra).unwrap())),
+        91 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 91>::new(bits, values, extra).unwrap())),
+        92 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 92>::new(bits, values, extra).unwrap())),
+        93 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 93>::new(bits, values, extra).unwrap())),
+        94 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 94>::new(bits, values, extra).unwrap())),
+        95 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 95>::new(bits, values, extra).unwrap())),
+        96 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 96>::new(bits, values, extra).unwrap())),
+        97 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 97>::new(bits, values, extra).unwrap())),
+        98 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 98>::new(bits, values, extra).unwrap())),
+        99 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 99>::new(bits, values, extra).unwrap())),
+        100 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 100>::new(bits, values, extra).unwrap())),
+        101 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 101>::new(bits, values, extra).unwrap())),
+        102 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 102>::new(bits, values, extra).unwrap())),
+        103 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 103>::new(bits, values, extra).unwrap())),
+        104 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 104>::new(bits, values, extra).unwrap())),
+        105 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 105>::new(bits, values, extra).unwrap())),
+        106 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 106>::new(bits, values, extra).unwrap())),
+        107 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 107>::new(bits, values, extra).unwrap())),
+        108 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 108>::new(bits, values, extra).unwrap())),
+        109 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 109>::new(bits, values, extra).unwrap())),
+        110 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 110>::new(bits, values, extra).unwrap())),
+        111 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 111>::new(bits, values, extra).unwrap())),
+        112 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 112>::new(bits, values, extra).unwrap())),
+        113 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 113>::new(bits, values, extra).unwrap())),
+        114 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 114>::new(bits, values, extra).unwrap())),
+        115 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 115>::new(bits, values, extra).unwrap())),
+        116 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 116>::new(bits, values, extra).unwrap())),
+        117 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 117>::new(bits, values, extra).unwrap())),
+        118 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 118>::new(bits, values, extra).unwrap())),
+        119 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 119>::new(bits, values, extra).unwrap())),
+        120 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 120>::new(bits, values, extra).unwrap())),
+        121 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 121>::new(bits, values, extra).unwrap())),
+        122 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 122>::new(bits, values, extra).unwrap())),
+        123 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 123>::new(bits, values, extra).unwrap())),
+        124 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 124>::new(bits, values, extra).unwrap())),
+        125 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 125>::new(bits, values, extra).unwrap())),
+        126 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 126>::new(bits, values, extra).unwrap())),
+        127 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 127>::new(bits, values, extra).unwrap())),
+        128 => Ok(Box::new(BitIndexedArrayImpl::<B, V, E, 128>::new(bits, values, extra).unwrap())),
         _ => Err(())
     }
 }
 
-impl <B: Clone, V: Clone, const SIZE: usize> Clone for BitIndexedArrayImpl<B, V, SIZE> {
+impl <B: Clone, V: Clone, E: Clone, const SIZE: usize> Clone for BitIndexedArrayImpl<B, V, E, SIZE> {
     fn clone(&self) -> Self {
         Self {
             bits: self.bits.clone(),
             values: self.values.clone(),
+            extra: self.extra.clone(),
         }
     }
 }
 
-impl <B: Clone, V: Clone> Clone for Box<dyn BitIndexedArray<B, V>> {
+impl <B: Clone, V: Clone, E: Clone> Clone for Box<dyn BitIndexedArray<B, V, E>> {
     fn clone(&self) -> Self {
         self.clone_impl()
     }
 }
 
-impl <B: CountOnes<B> + Default, V> Default for BitIndexedArrayImpl<B, V, 0> {
+impl <B: CountOnes<B> + Default, V, E: Default> Default for BitIndexedArrayImpl<B, V, E, 0> {
     fn default() -> Self {
-        Self::new(B::default(), Vec::new()).unwrap()
+        Self::new(B::default(), Vec::new(), E::default()).unwrap()
     }
 }
 
-impl <B: Eq, V: Eq, const SIZE: usize> Eq for BitIndexedArrayImpl<B, V, SIZE> {}
+impl <B: Eq, V: Eq, E: Eq, const SIZE: usize> Eq for BitIndexedArrayImpl<B, V, E, SIZE> {}
 
-impl <B: Eq, V: Clone + Eq> Eq for dyn BitIndexedArray<B, V> {}
+impl <B: Eq, V: Clone + Eq, E: Clone + Eq> Eq for dyn BitIndexedArray<B, V, E> {}
 
-impl <B: PartialEq, V: PartialEq, const SIZE: usize> PartialEq for BitIndexedArrayImpl<B, V, SIZE> {
+impl <B: PartialEq, V: PartialEq, E: PartialEq, const SIZE: usize> PartialEq for BitIndexedArrayImpl<B, V, E, SIZE> {
     fn eq(&self, other: &Self) -> bool {
         self.bits == other.bits && self.values == other.values
     }
 }
 
-impl <B: PartialEq, V: Clone + PartialEq> PartialEq for dyn BitIndexedArray<B, V> {
+impl <B: PartialEq, V: Clone + PartialEq, E: Clone+ PartialEq> PartialEq for dyn BitIndexedArray<B, V, E> {
     fn eq(&self, other: &Self) -> bool {
         self.eq_impl(other)
     }
 }
 
-impl <'a, B, V, const SIZE: usize> IntoIterator for &'a BitIndexedArrayImpl<B, V, SIZE> {
+impl <'a, B, V, E, const SIZE: usize> IntoIterator for &'a BitIndexedArrayImpl<B, V, E, SIZE> {
     type Item = &'a V;
     type IntoIter = core::slice::Iter<'a, V>;
 
@@ -424,7 +432,7 @@ impl <'a, B, V, const SIZE: usize> IntoIterator for &'a BitIndexedArrayImpl<B, V
     }
 }
 
-impl <'a, B, V, const SIZE: usize> IntoIterator for &'a mut BitIndexedArrayImpl<B, V, SIZE> {
+impl <'a, B, V, E, const SIZE: usize> IntoIterator for &'a mut BitIndexedArrayImpl<B, V, E, SIZE> {
     type Item = &'a mut V;
     type IntoIter = core::slice::IterMut<'a, V>;
 
@@ -433,7 +441,7 @@ impl <'a, B, V, const SIZE: usize> IntoIterator for &'a mut BitIndexedArrayImpl<
     }
 }
 
-impl <'a, B, V: Clone> IntoIterator for &'a dyn BitIndexedArray<B, V> {
+impl <'a, B, V: Clone, E: Clone> IntoIterator for &'a dyn BitIndexedArray<B, V, E> {
     type Item = &'a V;
     type IntoIter = core::slice::Iter<'a, V>;
 
@@ -442,7 +450,7 @@ impl <'a, B, V: Clone> IntoIterator for &'a dyn BitIndexedArray<B, V> {
     }
 }
 
-impl <'a, B, V: Clone> IntoIterator for &'a mut dyn BitIndexedArray<B, V> {
+impl <'a, B, V: Clone, E: Clone> IntoIterator for &'a mut dyn BitIndexedArray<B, V, E> {
     type Item = &'a mut V;
     type IntoIter = core::slice::IterMut<'a, V>;
 
@@ -451,13 +459,13 @@ impl <'a, B, V: Clone> IntoIterator for &'a mut dyn BitIndexedArray<B, V> {
     }
 }
 
-impl <B: Debug, V: Debug, const SIZE: usize> Debug for BitIndexedArrayImpl<B, V, SIZE> {
+impl <B: Debug, V: Debug, E: Debug, const SIZE: usize> Debug for BitIndexedArrayImpl<B, V, E, SIZE> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::result::Result<(), core::fmt::Error> {
-        write!(f, "BitIndexedArrayImpl {{ bits: {:?}, values: {:?} }}", self.bits, self.values)
+        write!(f, "BitIndexedArrayImpl {{ bits: {:?}, values: {:?}, extra: {:?} }}", self.bits, self.values, self.extra)
     }
 }
 
-impl <B: Debug, V: Clone + Debug> Debug for dyn BitIndexedArray<B, V> {
+impl <B: Debug, V: Clone + Debug, E: Clone + Debug> Debug for dyn BitIndexedArray<B, V, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::result::Result<(), core::fmt::Error> {
         self.fmt_impl(f)
     }
@@ -468,10 +476,13 @@ mod tests {
     use super::*;
     use std::println;
 
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
+    struct Zst {}
+    
     #[test]
     fn bit_indexed_array_insert() {
-        let mut bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,2>::new(0b101_u64, vec!(13, 42)).unwrap());
-        bia = bia.as_ref().inserted(0b10, Cow::Owned(3)).unwrap();
+        let mut bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,2>::new(0b101_u64, vec!(13, 42), Zst{}).unwrap());
+        bia = bia.as_ref().inserted(0b10, Cow::Owned(3), Cow::Owned(Zst{})).unwrap();
         assert_eq!(bia.as_ref().len(), 3);
         assert_eq!(*bia.as_ref().at_index(0).unwrap(), 13);
         assert_eq!(*bia.as_ref().at_index(1).unwrap(), 3);
@@ -486,20 +497,20 @@ mod tests {
 
     #[test]
     fn bit_indexed_array_insert_reinsert_failure() {
-        let bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,2>::new(0b101_u64, vec!(13, 42)).unwrap());
-        assert!(bia.as_ref().inserted(0b100, Cow::Owned(3)).is_err());
+        let bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,2>::new(0b101_u64, vec!(13, 42), Zst{}).unwrap());
+        assert!(bia.as_ref().inserted(0b100, Cow::Owned(3), Cow::Owned(Zst{})).is_err());
     }
 
     #[test]
     fn bit_indexed_array_insert_multibit_failure() {
-        let bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,2>::new(0b101_u64, vec!(13, 42)).unwrap());
-        assert!(bia.as_ref().inserted(0b1010, Cow::Owned(3)).is_err());
+        let bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,2>::new(0b101_u64, vec!(13, 42), Zst{}).unwrap());
+        assert!(bia.as_ref().inserted(0b1010, Cow::Owned(3), Cow::Owned(Zst{})).is_err());
     }
 
     #[test]
     fn bit_indexed_array_update() {
-        let mut bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,3>::new(0b1101_u64, vec!(13, 42, 8)).unwrap());
-        bia = bia.as_ref().updated(0b1000, Cow::Owned(11)).unwrap();
+        let mut bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,3>::new(0b1101_u64, vec!(13, 42, 8), Zst{}).unwrap());
+        bia = bia.as_ref().updated(0b1000, Cow::Owned(11), Cow::Owned(Zst{})).unwrap();
         assert_eq!(bia.as_ref().len(), 3);
         assert_eq!(*bia.as_ref().at_index(0).unwrap(), 13);
         assert!(bia.as_ref().at_index(1).is_err());
@@ -516,20 +527,20 @@ mod tests {
 
     #[test]
     fn bit_indexed_array_update_absent_failure() {
-        let bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,2>::new(0b101_u64, vec!(13, 42)).unwrap());
-        assert!(bia.as_ref().updated(0b10, Cow::Owned(3)).is_err());
+        let bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,2>::new(0b101_u64, vec!(13, 42), Zst{}).unwrap());
+        assert!(bia.as_ref().updated(0b10, Cow::Owned(3), Cow::Owned(Zst{})).is_err());
     }
 
     #[test]
     fn bit_indexed_array_update_multibit_failure() {
-        let bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,2>::new(0b101_u64, vec!(13, 42)).unwrap());
-        assert!(bia.as_ref().updated(0b101, Cow::Owned(3)).is_err());
+        let bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,2>::new(0b101_u64, vec!(13, 42), Zst{}).unwrap());
+        assert!(bia.as_ref().updated(0b101, Cow::Owned(3), Cow::Owned(Zst{})).is_err());
     }
 
     #[test]
     fn bit_indexed_array_update_index() {
-        let mut bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,3>::new(0b1101_u64, vec!(13, 42, 8)).unwrap());
-        bia = bia.as_ref().updated_index(2, Cow::Owned(11)).unwrap();
+        let mut bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,3>::new(0b1101_u64, vec!(13, 42, 8), Zst{}).unwrap());
+        bia = bia.as_ref().updated_index(2, Cow::Owned(11), Cow::Owned(Zst{})).unwrap();
         assert_eq!(bia.as_ref().len(), 3);
         assert_eq!(*bia.as_ref().at_index(0).unwrap(), 13);
         assert!(bia.as_ref().at_index(1).is_err());
@@ -546,14 +557,14 @@ mod tests {
 
     #[test]
     fn bit_indexed_array_update_absent_index_failure() {
-        let bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,2>::new(0b101_u64, vec!(13, 42)).unwrap());
-        assert!(bia.as_ref().updated_index(1, Cow::Owned(3)).is_err());
+        let bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,2>::new(0b101_u64, vec!(13, 42), Zst{}).unwrap());
+        assert!(bia.as_ref().updated_index(1, Cow::Owned(3), Cow::Owned(Zst{})).is_err());
     }
 
     #[test]
     fn bit_indexed_array_remove() {
-        let mut bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,3>::new(0b1101_u64, vec!(13, 42, 8)).unwrap());
-        bia = bia.as_ref().removed(0b1000).unwrap();
+        let mut bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,3>::new(0b1101_u64, vec!(13, 42, 8), Zst{}).unwrap());
+        bia = bia.as_ref().removed(0b1000, Cow::Owned(Zst{})).unwrap();
         assert_eq!(bia.as_ref().len(), 2);
         assert_eq!(*bia.as_ref().at_index(0).unwrap(), 13);
         assert!(bia.as_ref().at_index(1).is_err());
@@ -569,14 +580,14 @@ mod tests {
 
     #[test]
     fn bit_indexed_array_remove_absent_failure() {
-        let bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,3>::new(0b1101_u64, vec!(13, 42, 8)).unwrap());
-        assert!(bia.as_ref().removed(0b10).is_err());
+        let bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,3>::new(0b1101_u64, vec!(13, 42, 8), Zst{}).unwrap());
+        assert!(bia.as_ref().removed(0b10, Cow::Owned(Zst{})).is_err());
     }
 
     #[test]
     fn bit_indexed_array_remove_multibit_failure() {
-        let bia: Box<dyn BitIndexedArray<_,_>> = Box::new(BitIndexedArrayImpl::<_,_,3>::new(0b1101_u64, vec!(13, 42, 8)).unwrap());
-        assert!(bia.as_ref().removed(0b101).is_err());
+        let bia: Box<dyn BitIndexedArray<_,_,_>> = Box::new(BitIndexedArrayImpl::<_,_,_,3>::new(0b1101_u64, vec!(13, 42, 8), Zst{}).unwrap());
+        assert!(bia.as_ref().removed(0b101, Cow::Owned(Zst{})).is_err());
     }
 
 }

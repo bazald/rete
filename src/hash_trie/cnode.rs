@@ -5,19 +5,18 @@ use core::ops::*;
 
 #[derive(Clone, Debug)]
 pub(super) struct CNode <B, V: Value> {
-    nodes: Box<dyn BitIndexedArray::<B, Arc<dyn MNode<B, V>>>>,
-    size: usize,
+    nodes: Box<dyn BitIndexedArray::<B, Arc<dyn MNode<B, V>>, usize>>,
 }
 
 impl<B: BitAnd + CountOnes<B> + From<<B as BitAnd>::Output> + From<<B as Shr<usize>>::Output> + Into<usize> + LogB<B> + MaskLogB<B> + NthBit<B> + Shr<usize>, V: Value> CNode<B, V> {
-    fn new(nodes: Box<dyn BitIndexedArray::<B, Arc<dyn MNode<B, V>>>>, size: usize) -> Self {
-        Self { nodes, size }
+    fn new(nodes: Box<dyn BitIndexedArray::<B, Arc<dyn MNode<B, V>>, usize>>) -> Self {
+        Self { nodes }
     }
 }
 
 impl <B: BitAnd + BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + Default + From<<B as BitAnd>::Output> + From<<B as Shr<usize>>::Output> + Into<usize> + LogB<B> + MaskLogB<B> + NthBit<B> + NthOne<B> + PartialEq + Shr<usize> + 'static, V: Value> MNode<B, V> for CNode<B, V> {
     fn size(&self) -> usize {
-        self.size
+        *self.nodes.extra()
     }
 
     fn is_cnode(&self) -> bool {
@@ -35,11 +34,11 @@ impl <B: BitAnd + BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + C
         match self.nodes.at(flag.as_ref().unwrap().flag.clone()) {
             Ok(node) => match node.insert(value, flag.as_ref().unwrap().next()) {
                 InsertResult::Found(reference) => InsertResult::Found(reference),
-                InsertResult::Inserted(node) => InsertResult::Inserted(Arc::new(Self::new(self.nodes.updated(flag.unwrap().flag, Cow::Owned(node)).unwrap(), self.size() + 1)))
+                InsertResult::Inserted(node) => InsertResult::Inserted(Arc::new(Self::new(self.nodes.updated(flag.unwrap().flag, Cow::Owned(node), Cow::Owned(self.size() + 1)).unwrap())))
             },
             Err(_) => {
                 let node: Arc::<dyn MNode::<B, V>> = Arc::new(SNode::<V>::new(value.into_owned()));
-                InsertResult::Inserted(Arc::new(Self::new(self.nodes.inserted(flag.unwrap().flag, Cow::Owned(node)).unwrap(), self.size() + 1)))
+                InsertResult::Inserted(Arc::new(Self::new(self.nodes.inserted(flag.unwrap().flag, Cow::Owned(node), Cow::Owned(self.size() + 1)).unwrap())))
             }
         }
     }
@@ -48,7 +47,7 @@ impl <B: BitAnd + BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + C
         match self.nodes.at(flag.as_ref().unwrap().flag.clone()) {
             Ok(node) => match node.remove(value, flag.as_ref().unwrap().next()) {
                 RemoveResult::NotFound => RemoveResult::NotFound,
-                RemoveResult::Removed(node, reference) => RemoveResult::Removed(Arc::new(Self::new(self.nodes.updated(flag.unwrap().flag, Cow::Owned(node)).unwrap(), self.size() - 1)), reference) // TODO: Implement collapse on last subnode
+                RemoveResult::Removed(node, reference) => RemoveResult::Removed(Arc::new(Self::new(self.nodes.updated(flag.unwrap().flag, Cow::Owned(node), Cow::Owned(self.size() - 1)).unwrap())), reference) // TODO: Implement collapse on last subnode
             },
             Err(_) => RemoveResult::NotFound
         }
@@ -61,7 +60,7 @@ impl <B: BitAnd + BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + C
 
 impl<B: BitAnd + BitContains<B> + BitIndex<B> + BitInsert<B> + BitRemove<B> + Clone + CountOnes<B> + Debug + Default + From<<B as BitAnd>::Output> + From<<B as Shr<usize>>::Output> + Into<usize> + LogB<B> + MaskLogB<B> + NthBit<B> + NthOne<B> + PartialEq + Shr<usize> + 'static, V: Value> Default for CNode<B, V> {
     fn default() -> Self {
-        CNode::<B, V>::new(default_bit_indexed_array(), 0)
+        CNode::<B, V>::new(default_bit_indexed_array())
     }
 }
 
