@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::{cnode::*, flag::*, lnode::LNode, snode::SNode, traits::*};
-use alloc::{borrow::Cow, fmt::{self, Debug, Formatter}, sync::Arc};
+use alloc::{borrow::Cow, fmt::{self, Debug, Formatter}};
 use core::ptr;
 
 pub(super) enum FindResult<'a, V> {
@@ -8,38 +8,38 @@ pub(super) enum FindResult<'a, V> {
     Found(&'a V),
 }
 
-pub(super) enum InsertResult<'a, B, V> {
+pub(super) enum InsertResult<'a, B, V, H> {
     Found(&'a V),
-    Inserted(Arc<dyn MNode<B, V>>),
+    Inserted(ArcMNode<B, V, H>),
 }
 
-pub(super) enum RemoveResult<'a, B, V> {
+pub(super) enum RemoveResult<'a, B, V, H> {
     NotFound,
-    Removed(Arc<dyn MNode<B, V>>, &'a V),
+    Removed(ArcMNode<B, V, H>, &'a V),
 }
 
-pub(super) trait MNode <B, V: Clone> {
+pub(super) trait MNode <B, V: Clone, H: HasherBv<B, V>> {
     fn size(&self) -> usize;
     fn is_cnode(&self) -> bool;
 
-    fn find<'a>(&'a self, value: &V, flag: Option<Flag<B>>) -> FindResult<V>;
-    fn insert<'a>(&'a self, value: Cow<V>, flag: Option<Flag<B>>) -> InsertResult<B, V>;
-    fn remove<'a>(&'a self, value: &V, flag: Option<Flag<B>>) -> RemoveResult<B, V>;
+    fn find(&self, value: &V, flag: Option<Flag<B>>) -> FindResult<V>;
+    fn insert(&self, arc_self: ArcMNode<B, V, H>, value: Cow<V>, flag: Option<Flag<B>>) -> InsertResult<B, V, H>;
+    fn remove(&self, value: &V, flag: Option<Flag<B>>) -> RemoveResult<B, V, H>;
 
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error>;
 }
 
-impl <B, V: Clone> Debug for dyn MNode<B, V> {
+impl <B, V: Clone, H: HasherBv<B, V>> Debug for dyn MNode<B, V, H> {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
         self.fmt(formatter)
     }
 }
 
-impl <B, V: Value> Eq for dyn MNode<B, V> {}
+impl <B, V: Value, H: HasherBv<B, V>> Eq for dyn MNode<B, V, H> {}
 
-impl <B, V: Value> PartialEq for dyn MNode<B, V> {
+impl <B, V: Value, H: HasherBv<B, V>> PartialEq for dyn MNode<B, V, H> {
     fn eq(&self, other: &Self) -> bool {
-        ptr::eq(self as *const dyn MNode<B, V> as *const u8, other as *const dyn MNode<B, V> as *const u8)
+        ptr::eq(self as *const dyn MNode<B, V, H> as *const u8, other as *const dyn MNode<B, V, H> as *const u8)
     }
 }
 

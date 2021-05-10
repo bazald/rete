@@ -1,5 +1,5 @@
 use alloc::fmt::Debug;
-use core::{hash::Hash, ops::*};
+use core::{hash::{Hash, Hasher}, mem, ops::*};
 
 pub trait Value: Clone + Debug + Eq + PartialEq + Hash + 'static {}
 impl <T: Clone + Debug + Eq + PartialEq + Hash + 'static> Value
@@ -40,6 +40,14 @@ impl <T: HashValuable + From<<T as BitAnd>::Output> + From<<T as BitOr>::Output>
     }
 }
 
-pub trait HasherBv<B, V>: Debug + Default {
-    fn hash(&mut self, value: &V) -> B;
+pub trait HasherBv<B, V>: Debug + Default + 'static {
+    fn hash(&self, value: &V) -> B;
+}
+
+impl <V, H: Debug + Default + Hasher + 'static> HasherBv<u64, V> for H {
+    fn hash(&self, value: &V) -> u64 {
+        let mut hasher = H::default();
+        hasher.write(unsafe { core::slice::from_raw_parts(value as *const V as *const u8, mem::size_of::<V>()) });
+        hasher.finish()
+    }
 }
