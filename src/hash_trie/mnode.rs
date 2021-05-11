@@ -1,45 +1,66 @@
 #[allow(unused_imports)]
-use super::{cnode::*, flag::*, lnode::LNode, snode::SNode, traits::*};
-use alloc::{borrow::Cow, fmt::{self, Debug, Formatter}};
-use core::ptr;
+use super::{cnode::*, flag::*, lnode::{self, LNode}, snode::{self, SNode}, traits::*};
+use alloc::{borrow::Cow, fmt::Debug, sync::Arc};
 
-pub(super) enum FindResult<'a, V> {
+pub(super) enum FindResult<'a, V: Value> {
     NotFound,
     Found(&'a V),
 }
 
-pub(super) enum InsertResult<'a, B, V, H> {
+pub(super) enum InsertResult<'a, B: Bits, V: Value, H: 'static> {
     Found(&'a V),
-    Inserted(ArcMNode<B, V, H>),
+    InsertedC(CNode<B, V, H>),
+    InsertedL(Arc<LNode<V>>),
 }
 
-pub(super) enum RemoveResult<'a, B, V, H> {
+pub(super) enum RemoveResult<'a, B: Bits, V: Value, H: 'static> {
     NotFound,
-    Removed(ArcMNode<B, V, H>, &'a V),
+    RemovedC(CNode<B, V, H>, &'a V),
+    RemovedL(Arc<LNode<V>>, &'a V),
+    RemovedS(Arc<SNode<V>>, &'a V),
+    RemovedZ(&'a V),
 }
 
-pub(super) trait MNode <B, V: Clone, H: HasherBv<B, V>> {
-    fn size(&self) -> usize;
-    fn is_cnode(&self) -> bool;
-
-    fn find(&self, value: &V, flag: Option<Flag<B>>) -> FindResult<V>;
-    fn insert(&self, arc_self: ArcMNode<B, V, H>, value: Cow<V>, flag: Option<Flag<B>>) -> InsertResult<B, V, H>;
-    fn remove(&self, value: &V, flag: Option<Flag<B>>) -> RemoveResult<B, V, H>;
-
-    fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error>;
+#[derive(Debug)]
+pub(super) enum MNode <B: Bits, V: Value, H: 'static> {
+    C(CNode<B, V, H>),
+    L(Arc<LNode<V>>),
+    S(Arc<SNode<V>>),
 }
 
-impl <B, V: Clone, H: HasherBv<B, V>> Debug for dyn MNode<B, V, H> {
-    fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
-        self.fmt(formatter)
+impl <B: Bits, V: Value, H: HasherBv<B, V>> MNode<B, V, H> {
+    pub(super) fn find<'a>(&'a self, value: &V, flag: Option<Flag<B>>) -> FindResult<'a, V> {
+        match self {
+            Self::C(cnode) => cnode.find(value, flag),
+            Self::L(lnode) => lnode.find(value),
+            Self::S(snode) => if *snode.get() == *value { FindResult::Found(snode.get()) } else { FindResult::NotFound },
+        }
+    }
+
+    pub(super) fn insert<'a>(&'a self, value: Cow<V>, flag: Option<Flag<B>>) -> InsertResult<'a, B, V, H> {
+        match self {
+            Self::C(cnode) => cnode.insert(value, flag),
+            Self::L(lnode) => lnode::insert(&lnode, value, flag),
+            Self::S(snode) => snode::insert(&snode, value, flag),
+        }
+    }
+    
+    pub(super) fn remove<'a>(&'a self, value: &V, flag: Option<Flag<B>>) -> RemoveResult<'a, B, V, H> {
+        match self {
+            Self::C(cnode) => cnode.remove(value, flag),
+            Self::L(lnode) => lnode.remove(value),
+            Self::S(snode) => if *snode.get() == *value { RemoveResult::RemovedZ(snode.get()) } else { RemoveResult::NotFound },
+        }
     }
 }
 
-impl <B, V: Value, H: HasherBv<B, V>> Eq for dyn MNode<B, V, H> {}
-
-impl <B, V: Value, H: HasherBv<B, V>> PartialEq for dyn MNode<B, V, H> {
-    fn eq(&self, other: &Self) -> bool {
-        ptr::eq(self as *const dyn MNode<B, V, H> as *const u8, other as *const dyn MNode<B, V, H> as *const u8)
+impl <B: Bits, V: Value, H: 'static> Clone for MNode<B, V, H> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::C(this) => Self::C((*this).clone()),
+            Self::L(this) => Self::L((*this).clone()),
+            Self::S(this) => Self::S((*this).clone()),
+        }
     }
 }
 
