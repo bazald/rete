@@ -3,9 +3,9 @@ use super::flag::*;
 use alloc::fmt::Debug;
 use core::{hash::{Hash, Hasher}, mem, ops::*};
 
-pub trait Bits: AsUsize + BitAnd + BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Debug + Default + From<<Self as BitAnd>::Output> + From<<Self as Shr<usize>>::Output> + LogB + MaskLogB + NthBit + NthOne + PartialEq + Shr<usize> + Send + Sync + 'static {}
-impl <B: AsUsize + BitAnd + BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Debug + Default + From<<Self as BitAnd>::Output> + From<<Self as Shr<usize>>::Output> + LogB + MaskLogB + NthBit + NthOne + PartialEq + Shr<usize> + Send + Sync + 'static> Bits
-for B where B: AsUsize + BitAnd + BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Debug + Default + From<<Self as BitAnd>::Output> + From<<Self as Shr<usize>>::Output> + LogB + MaskLogB + NthBit + NthOne + PartialEq + Shr<usize> + Send + Sync + 'static {}
+pub trait Bits: AsUsize + BitAnd + BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Debug + Default + From<<Self as BitAnd>::Output> + From<<Self as Shr<usize>>::Output> + LogB + MaskLogB + NthBit + PartialEq + Shr<usize> + Send + Sync + 'static {}
+impl <B: AsUsize + BitAnd + BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Debug + Default + From<<Self as BitAnd>::Output> + From<<Self as Shr<usize>>::Output> + LogB + MaskLogB + NthBit + PartialEq + Shr<usize> + Send + Sync + 'static> Bits
+for B where B: AsUsize + BitAnd + BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Debug + Default + From<<Self as BitAnd>::Output> + From<<Self as Shr<usize>>::Output> + LogB + MaskLogB + NthBit + PartialEq + Shr<usize> + Send + Sync + 'static {}
 
 pub trait Value: Clone + Debug + Eq + PartialEq + Hash + Send + Sync + 'static {}
 impl <T: Clone + Debug + Eq + PartialEq + Hash + Send + Sync + 'static> Value

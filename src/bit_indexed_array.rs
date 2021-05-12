@@ -1,5 +1,5 @@
 use alloc::{borrow::Cow, boxed::Box, collections::VecDeque, fmt::{Debug, Formatter}, vec::Vec};
-use core::{any::Any, mem, ptr};
+use core::{mem, ptr};
 
 pub trait BitContains {
     fn bit_contains(&self, bit: Self) -> Result<bool, ()>;
@@ -55,21 +55,11 @@ pub trait NthBit {
     fn nth_bit(n: usize) -> Result<Self, ()> where Self: Sized;
 }
 impl NthBit for u8 { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 8 {Ok(1_u8 << n)} else {Err(())}} }
-impl NthBit for u16 { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 8 {Ok(1_u16 << n)} else {Err(())}} }
-impl NthBit for u32 { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 8 {Ok(1_u32 << n)} else {Err(())}} }
-impl NthBit for u64 { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 8 {Ok(1_u64 << n)} else {Err(())}} }
-impl NthBit for u128 { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 8 {Ok(1_u128 << n)} else {Err(())}} }
-impl NthBit for usize { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 8 {Ok(1_usize << n)} else {Err(())}} }
-
-pub trait NthOne {
-    fn nth_one(&self, n: usize) -> Result<usize, ()> where Self: Sized;
-}
-impl NthOne for u8 { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..8 {if self & (1_u8 << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
-impl NthOne for u16 { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..16 {if self & (1_u16 << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
-impl NthOne for u32 { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..32 {if self & (1_u32 << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
-impl NthOne for u64 { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..64 {if self & (1_u64 << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
-impl NthOne for u128 { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..128 {if self & (1_u128 << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
-impl NthOne for usize { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..(8 * mem::size_of::<usize>()) {if self & (1_usize << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
+impl NthBit for u16 { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 16 {Ok(1_u16 << n)} else {Err(())}} }
+impl NthBit for u32 { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 32 {Ok(1_u32 << n)} else {Err(())}} }
+impl NthBit for u64 { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 64 {Ok(1_u64 << n)} else {Err(())}} }
+impl NthBit for u128 { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 128 {Ok(1_u128 << n)} else {Err(())}} }
+impl NthBit for usize { fn nth_bit(n: usize) -> Result<Self, ()> {if n < 8 * mem::size_of::<usize>() {Ok(1_usize << n)} else {Err(())}} }
 
 struct BitIndexedArrayImpl <B, V, E, const SIZE: usize> {
     bits: B,
@@ -96,7 +86,7 @@ impl<B: CountOnes, V, E, const SIZE: usize> BitIndexedArrayImpl<B, V, E, SIZE> {
 }
 
 
-pub trait BitIndexedArray<B, V: Clone, E: Clone>: Any + 'static {
+pub trait BitIndexedArray<B, V: Clone, E: Clone>: 'static {
     fn bits(&self) -> B;
     fn len(&self) -> usize;
     fn values(&self) -> &[V];
@@ -117,7 +107,7 @@ pub trait BitIndexedArray<B, V: Clone, E: Clone>: Any + 'static {
     fn iter_mut(&'_ mut self) -> core::slice::IterMut<'_, V>;
 }
 
-impl <B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + NthBit + NthOne + PartialEq + 'static, V: Clone + 'static, E: Clone + Default + 'static, const SIZE: usize> BitIndexedArray<B, V, E> for BitIndexedArrayImpl<B, V, E, SIZE> {
+impl <B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + NthBit + PartialEq + 'static, V: Clone + 'static, E: Clone + Default + 'static, const SIZE: usize> BitIndexedArray<B, V, E> for BitIndexedArrayImpl<B, V, E, SIZE> {
     fn bits(&self) -> B {
         self.bits.clone()
     }
@@ -222,12 +212,12 @@ impl <B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Nt
 }
 
 #[allow(dead_code)]
-pub fn default_bit_indexed_array<B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Default + NthBit + NthOne + PartialEq + 'static, V: Clone + 'static, E: Clone + Default + 'static>() -> Box<dyn BitIndexedArray<B, V, E>> {
+pub fn default_bit_indexed_array<B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Default + NthBit + PartialEq + 'static, V: Clone + 'static, E: Clone + Default + 'static>() -> Box<dyn BitIndexedArray<B, V, E>> {
     Box::new(BitIndexedArrayImpl::<B, V, E, 0>::default())
 }
 
 #[allow(dead_code)]
-pub fn new_bit_indexed_array<B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + NthBit + NthOne + PartialEq + 'static, V: Clone + 'static, E: Clone + Default + 'static>(bits: B, values: impl Into<VecDeque<V>>, extra: E) -> Result<Box<dyn BitIndexedArray<B, V, E>>, ()> {
+pub fn new_bit_indexed_array<B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + NthBit + PartialEq + 'static, V: Clone + 'static, E: Clone + Default + 'static>(bits: B, values: impl Into<VecDeque<V>>, extra: E) -> Result<Box<dyn BitIndexedArray<B, V, E>>, ()> {
     let values: VecDeque<V> = values.into();
     if bits.count_ones_t() != values.len() {
         return Err(());
