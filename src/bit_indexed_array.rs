@@ -71,13 +71,13 @@ impl NthOne for u64 { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < s
 impl NthOne for u128 { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..128 {if self & (1_u128 << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
 impl NthOne for usize { fn nth_one(&self, n: usize) -> Result<usize, ()> {if n < self.count_ones() as usize {let mut count = 0_usize; for i in 0..(8 * mem::size_of::<usize>()) {if self & (1_usize << i) != 0 {if count == n {return Ok(i);} count += 1;}} Err(())} else {Err(())}} }
 
-struct BitIndexedArrayImpl <B: Send + Sync, V: Send + Sync, E: Send + Sync, const SIZE: usize> {
+struct BitIndexedArrayImpl <B, V, E, const SIZE: usize> {
     bits: B,
     values: [V; SIZE],
     extra: E,
 }
 
-impl<B: CountOnes + Send + Sync, V: Send + Sync, E: Send + Sync, const SIZE: usize> BitIndexedArrayImpl<B, V, E, SIZE> {
+impl<B: CountOnes, V, E, const SIZE: usize> BitIndexedArrayImpl<B, V, E, SIZE> {
     fn new(bits: B, values: impl Into<VecDeque<V>>, extra: E) -> Result<Self, ()> {
         let mut values: VecDeque<V> = values.into();
         if bits.count_ones_t() != SIZE || values.len() != SIZE {
@@ -95,9 +95,11 @@ impl<B: CountOnes + Send + Sync, V: Send + Sync, E: Send + Sync, const SIZE: usi
     }
 }
 
-pub trait BitIndexedArray<B, V: Clone, E: Clone>: Any + Send + Sync + 'static {
+
+pub trait BitIndexedArray<B, V: Clone, E: Clone>: Any + 'static {
     fn bits(&self) -> B;
     fn len(&self) -> usize;
+    fn values(&self) -> &[V];
     fn extra(&self) -> &E;
 
     fn at(&self, bit: B) -> Result<&V, ()>;
@@ -110,134 +112,122 @@ pub trait BitIndexedArray<B, V: Clone, E: Clone>: Any + Send + Sync + 'static {
     fn removed_index(&self, index: usize, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()>;
 
     fn clone_impl(&self) -> Box<dyn BitIndexedArray::<B, V, E>>;
-    fn fmt_impl(&self, f: &mut Formatter<'_>) -> core::result::Result<(), core::fmt::Error>;
     
     fn iter(&'_ self) -> core::slice::Iter<'_, V>;
     fn iter_mut(&'_ mut self) -> core::slice::IterMut<'_, V>;
 }
-macro_rules! bit_indexed_array_t {
-    ( $size:literal ) => {
-        impl <B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Debug + NthBit + NthOne + PartialEq + Send + Sync + 'static, V: Clone + Debug + Send + Sync + 'static, E: Clone + Debug + Default + Send + Sync + 'static> BitIndexedArray<B, V, E> for BitIndexedArrayImpl<B, V, E, $size> {
-            fn bits(&self) -> B {
-                self.bits.clone()
-            }
 
-            fn len(&self) -> usize {
-                $size
-            }
+impl <B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + NthBit + NthOne + PartialEq + 'static, V: Clone + 'static, E: Clone + Default + 'static, const SIZE: usize> BitIndexedArray<B, V, E> for BitIndexedArrayImpl<B, V, E, SIZE> {
+    fn bits(&self) -> B {
+        self.bits.clone()
+    }
 
-            fn extra(&self) -> &E {
-                &self.extra
-            }
+    fn len(&self) -> usize {
+        SIZE
+    }
 
-            fn at(&self, bit: B) -> Result<&V, ()> {
-                let index = self.bits.bit_index(bit)?;
-                #[allow(unused_comparisons)]
-                if index < $size {
-                    Ok(&self.values[index])
-                }
-                else {
-                    Err(())
-                }
-            }
+    fn values(&self) -> &[V] {
+        &self.values
+    }
 
-            fn at_index(&self, index: usize) -> Result<&V, ()> {
-                Ok(&self.values[self.bits.bit_index(B::nth_bit(index)?)?])
-            }
+    fn extra(&self) -> &E {
+        &self.extra
+    }
 
-            fn inserted(&self, bit: B, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
-                let bits = self.bits.bit_insert(bit.clone())?;
-                let index = bits.bit_index(bit)?;
-                let mut building = VecDeque::<V>::new();
-                for i in 0..index {
-                    building.push_back(self.values[i].clone());
-                }
-                building.push_back(value.into_owned());
-                for i in index..$size {
-                    building.push_back(self.values[i].clone());
-                }
-                new_bit_indexed_array(bits, building, extra.into_owned())
-            }
-
-            fn inserted_index(&self, index: usize, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
-                self.inserted(B::nth_bit(index)?, value, extra)
-            }
-            
-            fn updated(&self, bit: B, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
-                if !self.bits.bit_contains(bit.clone())? {
-                    return Err(());
-                }
-                let index = self.bits.bit_index(bit)?;
-                let mut building = VecDeque::<V>::new();
-                for i in 0..index {
-                    building.push_back(self.values[i].clone());
-                }
-                building.push_back(value.into_owned());
-                for i in index+1..$size {
-                    building.push_back(self.values[i].clone());
-                }
-                new_bit_indexed_array(self.bits.clone(), building, extra.into_owned())
-            }
-
-            fn updated_index(&self, index: usize, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
-                self.updated(B::nth_bit(index)?, value, extra)
-            }
-            
-            fn removed(&self, bit: B, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
-                let bits = self.bits.bit_remove(bit.clone())?;
-                let index = self.bits.bit_index(bit)?;
-                let mut building = VecDeque::<V>::new();
-                for i in 0..index {
-                    building.push_back(self.values[i].clone());
-                }
-                for i in index+1..$size {
-                    building.push_back(self.values[i].clone());
-                }
-                new_bit_indexed_array(bits, building, extra.into_owned())
-            }
-            
-            fn removed_index(&self, index: usize, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
-                self.removed(B::nth_bit(index)?, extra)
-            }
-            
-            fn clone_impl(&self) -> Box<dyn BitIndexedArray::<B, V, E>> {
-                Box::new(Self {
-                    bits: self.bits.clone(),
-                    values: self.values.clone(),
-                    extra: self.extra.clone(),
-                })
-            }
-            
-            fn fmt_impl(&self, f: &mut Formatter<'_>) -> core::result::Result<(), core::fmt::Error> {
-                write!(f, "BitIndexedArrayImpl {{ bits: {:?}, values: {:?} }}", self.bits, self.values)
-            }
-            
-            fn iter<'a>(&'a self) -> core::slice::Iter<'a, V> {
-                self.values.iter()
-            }
-            
-            fn iter_mut<'a>(&'a mut self) -> core::slice::IterMut<'a, V> {
-                self.values.iter_mut()
-            }
+    fn at(&self, bit: B) -> Result<&V, ()> {
+        let index = self.bits.bit_index(bit)?;
+        #[allow(unused_comparisons)]
+        if index < SIZE {
+            Ok(&self.values[index])
         }
-    };
-    ( $size:literal, $($rest:literal),+ ) => {
-        bit_indexed_array_t!($size);
-        bit_indexed_array_t!($($rest),+);
-    };
+        else {
+            Err(())
+        }
+    }
+
+    fn at_index(&self, index: usize) -> Result<&V, ()> {
+        Ok(&self.values[self.bits.bit_index(B::nth_bit(index)?)?])
+    }
+
+    fn inserted(&self, bit: B, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
+        let bits = self.bits.bit_insert(bit.clone())?;
+        let index = bits.bit_index(bit)?;
+        let mut building = VecDeque::<V>::new();
+        for i in 0..index {
+            building.push_back(self.values[i].clone());
+        }
+        building.push_back(value.into_owned());
+        for i in index..SIZE {
+            building.push_back(self.values[i].clone());
+        }
+        new_bit_indexed_array(bits, building, extra.into_owned())
+    }
+
+    fn inserted_index(&self, index: usize, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
+        self.inserted(B::nth_bit(index)?, value, extra)
+    }
+    
+    fn updated(&self, bit: B, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
+        if !self.bits.bit_contains(bit.clone())? {
+            return Err(());
+        }
+        let index = self.bits.bit_index(bit)?;
+        let mut building = VecDeque::<V>::new();
+        for i in 0..index {
+            building.push_back(self.values[i].clone());
+        }
+        building.push_back(value.into_owned());
+        for i in index+1..SIZE {
+            building.push_back(self.values[i].clone());
+        }
+        new_bit_indexed_array(self.bits.clone(), building, extra.into_owned())
+    }
+
+    fn updated_index(&self, index: usize, value: Cow<V>, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
+        self.updated(B::nth_bit(index)?, value, extra)
+    }
+    
+    fn removed(&self, bit: B, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
+        let bits = self.bits.bit_remove(bit.clone())?;
+        let index = self.bits.bit_index(bit)?;
+        let mut building = VecDeque::<V>::new();
+        for i in 0..index {
+            building.push_back(self.values[i].clone());
+        }
+        for i in index+1..SIZE {
+            building.push_back(self.values[i].clone());
+        }
+        new_bit_indexed_array(bits, building, extra.into_owned())
+    }
+    
+    fn removed_index(&self, index: usize, extra: Cow<E>) -> Result<Box<dyn BitIndexedArray::<B, V, E>>, ()> {
+        self.removed(B::nth_bit(index)?, extra)
+    }
+    
+    fn clone_impl(&self) -> Box<dyn BitIndexedArray::<B, V, E>> {
+        Box::new(Self {
+            bits: self.bits.clone(),
+            values: self.values.clone(),
+            extra: self.extra.clone(),
+        })
+    }
+    
+    fn iter(&self) -> core::slice::Iter<V> {
+        self.values.iter()
+    }
+    
+    fn iter_mut(&mut self) -> core::slice::IterMut<V> {
+        self.values.iter_mut()
+    }
 }
-bit_indexed_array_t!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
-    64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
-    96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128);
 
 #[allow(dead_code)]
-pub fn default_bit_indexed_array<B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Debug + Default + NthBit + NthOne + PartialEq + Send + Sync + 'static, V: Clone + Debug + Send + Sync + 'static, E: Clone + Debug + Default + Send + Sync + 'static>() -> Box<dyn BitIndexedArray<B, V, E>> {
+pub fn default_bit_indexed_array<B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Default + NthBit + NthOne + PartialEq + 'static, V: Clone + 'static, E: Clone + Default + 'static>() -> Box<dyn BitIndexedArray<B, V, E>> {
     Box::new(BitIndexedArrayImpl::<B, V, E, 0>::default())
 }
 
 #[allow(dead_code)]
-pub fn new_bit_indexed_array<B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + Debug + NthBit + NthOne + PartialEq + Send + Sync + 'static, V: Clone + Debug + Send + Sync + 'static, E: Clone + Debug + Default + Send + Sync + 'static>(bits: B, values: impl Into<VecDeque<V>>, extra: E) -> Result<Box<dyn BitIndexedArray<B, V, E>>, ()> {
+pub fn new_bit_indexed_array<B: BitContains + BitIndex + BitInsert + BitRemove + Clone + CountOnes + NthBit + NthOne + PartialEq + 'static, V: Clone + 'static, E: Clone + Default + 'static>(bits: B, values: impl Into<VecDeque<V>>, extra: E) -> Result<Box<dyn BitIndexedArray<B, V, E>>, ()> {
     let values: VecDeque<V> = values.into();
     if bits.count_ones_t() != values.len() {
         return Err(());
@@ -376,7 +366,7 @@ pub fn new_bit_indexed_array<B: BitContains + BitIndex + BitInsert + BitRemove +
     }
 }
 
-impl <B: Clone + Send + Sync, V: Clone + Send + Sync, E: Clone + Send + Sync, const SIZE: usize> Clone for BitIndexedArrayImpl<B, V, E, SIZE> {
+impl <B: Clone, V: Clone, E: Clone, const SIZE: usize> Clone for BitIndexedArrayImpl<B, V, E, SIZE> {
     fn clone(&self) -> Self {
         Self {
             bits: self.bits.clone(),
@@ -392,17 +382,17 @@ impl <B: Clone + 'static, V: Clone + 'static, E: Clone + 'static> Clone for Box<
     }
 }
 
-impl <B: CountOnes + Default + Send + Sync, V: Send + Sync, E: Default + Send + Sync> Default for BitIndexedArrayImpl<B, V, E, 0> {
+impl <B: CountOnes + Default, V, E: Default> Default for BitIndexedArrayImpl<B, V, E, 0> {
     fn default() -> Self {
         Self::new(B::default(), Vec::new(), E::default()).unwrap()
     }
 }
 
-impl <B: Eq + Send + Sync, V: Eq + Send + Sync, E: Eq + Send + Sync, const SIZE: usize> Eq for BitIndexedArrayImpl<B, V, E, SIZE> {}
+impl <B: Eq, V: Eq, E: Eq, const SIZE: usize> Eq for BitIndexedArrayImpl<B, V, E, SIZE> {}
 
 impl <B: Eq + 'static, V: Clone + Eq + 'static, E: Clone + Eq + 'static> Eq for dyn BitIndexedArray<B, V, E> {}
 
-impl <B: PartialEq + Send + Sync, V: PartialEq + Send + Sync, E: PartialEq + Send + Sync, const SIZE: usize> PartialEq for BitIndexedArrayImpl<B, V, E, SIZE> {
+impl <B: PartialEq, V: PartialEq, E: PartialEq, const SIZE: usize> PartialEq for BitIndexedArrayImpl<B, V, E, SIZE> {
     fn eq(&self, other: &Self) -> bool {
         if self.bits != other.bits || self.extra != other.extra {
             return false;
@@ -418,19 +408,11 @@ impl <B: PartialEq + Send + Sync, V: PartialEq + Send + Sync, E: PartialEq + Sen
 
 impl <B: PartialEq + 'static, V: Clone + PartialEq + 'static, E: Clone + PartialEq + 'static> PartialEq for dyn BitIndexedArray<B, V, E> {
     fn eq(&self, other: &Self) -> bool {
-        if self.bits() != other.bits() || self.len() != other.len() || *self.extra() != *other.extra() {
-            return false;
-        }
-        for i in 0..self.len() {
-            if *self.at_index(i).unwrap() != *other.at_index(i).unwrap() {
-                return false;
-            }
-        }
-        true
+        self.bits() == other.bits() && self.values() == other.values() && *self.extra() == *other.extra()
     }
 }
 
-impl <'a, B: Send + Sync, V: Send + Sync, E: Send + Sync, const SIZE: usize> IntoIterator for &'a BitIndexedArrayImpl<B, V, E, SIZE> {
+impl <'a, B, V, E, const SIZE: usize> IntoIterator for &'a BitIndexedArrayImpl<B, V, E, SIZE> {
     type Item = &'a V;
     type IntoIter = core::slice::Iter<'a, V>;
 
@@ -439,7 +421,7 @@ impl <'a, B: Send + Sync, V: Send + Sync, E: Send + Sync, const SIZE: usize> Int
     }
 }
 
-impl <'a, B: Send + Sync, V: Send + Sync, E: Send + Sync, const SIZE: usize> IntoIterator for &'a mut BitIndexedArrayImpl<B, V, E, SIZE> {
+impl <'a, B, V, E, const SIZE: usize> IntoIterator for &'a mut BitIndexedArrayImpl<B, V, E, SIZE> {
     type Item = &'a mut V;
     type IntoIter = core::slice::IterMut<'a, V>;
 
@@ -466,7 +448,7 @@ impl <'a, B: 'static, V: Clone + 'static, E: Clone + 'static> IntoIterator for &
     }
 }
 
-impl <B: Debug + Send + Sync, V: Debug + Send + Sync, E: Debug + Send + Sync, const SIZE: usize> Debug for BitIndexedArrayImpl<B, V, E, SIZE> {
+impl <B: Debug, V: Debug, E: Debug, const SIZE: usize> Debug for BitIndexedArrayImpl<B, V, E, SIZE> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::result::Result<(), core::fmt::Error> {
         write!(f, "BitIndexedArrayImpl {{ bits: {:?}, values: {:?}, extra: {:?} }}", self.bits, self.values, self.extra)
     }
@@ -474,7 +456,7 @@ impl <B: Debug + Send + Sync, V: Debug + Send + Sync, E: Debug + Send + Sync, co
 
 impl <B: Debug + 'static, V: Clone + Debug + 'static, E: Clone + Debug + 'static> Debug for dyn BitIndexedArray<B, V, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::result::Result<(), core::fmt::Error> {
-        self.fmt_impl(f)
+        write!(f, "BitIndexedArray {{ bits: {:?}, values: {:?}, extra: {:?} }}", self.bits(), self.values(), self.extra())
     }
 }
 
@@ -485,6 +467,14 @@ mod tests {
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
     struct Zst {}
+    
+    #[test]
+    fn bit_indexed_array_sizes_differ() {
+        assert!(mem::size_of::<BitIndexedArrayImpl::<u64,usize,Zst,0>>() < mem::size_of::<BitIndexedArrayImpl::<u64,usize,Zst,1>>());
+        assert!(mem::size_of::<BitIndexedArrayImpl::<u64,usize,Zst,1>>() < mem::size_of::<BitIndexedArrayImpl::<u64,usize,Zst,2>>());
+        assert!(mem::size_of::<BitIndexedArrayImpl::<u64,usize,Zst,126>>() < mem::size_of::<BitIndexedArrayImpl::<u64,usize,Zst,127>>());
+        assert!(mem::size_of::<BitIndexedArrayImpl::<u64,usize,Zst,127>>() < mem::size_of::<BitIndexedArrayImpl::<u64,usize,Zst,128>>());
+    }
     
     #[test]
     fn bit_indexed_array_insert() {

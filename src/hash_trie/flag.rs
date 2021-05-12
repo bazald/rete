@@ -70,6 +70,10 @@ impl <B: AsUsize + BitAnd + Clone + From<<B as BitAnd>::Output> + From<<B as Shr
         }
     }
 
+    pub(super) fn hash_value(&self) -> B {
+        self.hash_value.clone()
+    }
+
     pub(super) fn depth(&self) -> usize {
         self.depth
     }

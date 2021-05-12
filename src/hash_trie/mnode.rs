@@ -28,20 +28,12 @@ pub(super) enum MNode <B: Bits, V: Value, H: 'static> {
     S(Arc<SNode<V>>),
 }
 
-impl <B: Bits, V: Value, H: HasherBv<B, V>> MNode<B, V, H> {
+impl <B: Bits, V: Value, H: 'static> MNode<B, V, H> {
     pub(super) fn find<'a>(&'a self, value: &V, flag: Option<Flag<B>>) -> FindResult<'a, V> {
         match self {
             Self::C(cnode) => cnode.find(value, flag),
             Self::L(lnode) => lnode.find(value),
             Self::S(snode) => if *snode.get() == *value { FindResult::Found(snode.get()) } else { FindResult::NotFound },
-        }
-    }
-
-    pub(super) fn insert<'a>(&'a self, value: Cow<V>, flag: Option<Flag<B>>) -> InsertResult<'a, B, V, H> {
-        match self {
-            Self::C(cnode) => cnode.insert(value, flag),
-            Self::L(lnode) => lnode::insert(&lnode, value, flag),
-            Self::S(snode) => snode::insert(&snode, value, flag),
         }
     }
     
@@ -50,6 +42,16 @@ impl <B: Bits, V: Value, H: HasherBv<B, V>> MNode<B, V, H> {
             Self::C(cnode) => cnode.remove(value, flag),
             Self::L(lnode) => lnode.remove(value),
             Self::S(snode) => if *snode.get() == *value { RemoveResult::RemovedZ(snode.get()) } else { RemoveResult::NotFound },
+        }
+    }
+}
+
+impl <B: Bits, V: Value, H: HasherBv<B, V>> MNode<B, V, H> {
+    pub(super) fn insert<'a>(&'a self, value: Cow<V>, flag: Option<Flag<B>>) -> InsertResult<'a, B, V, H> {
+        match self {
+            Self::C(cnode) => cnode.insert(value, flag),
+            Self::L(lnode) => lnode::insert(&lnode, value, flag),
+            Self::S(snode) => snode::insert(&snode, value, flag),
         }
     }
 }

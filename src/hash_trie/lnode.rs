@@ -1,5 +1,4 @@
-use crate::bit_indexed_array::*;
-use super::{cnode::*, flag::*, mnode::*, snode::{self, *}, traits::*};
+use super::{cnode::*, flag::*, mnode::*, snode::*, traits::*};
 use alloc::{borrow::Cow, fmt::Debug, sync::*};
 
 #[derive(Clone, Debug)]
@@ -54,19 +53,12 @@ impl<V: Value> LNode<V> {
         else {
             match &self.next {
                 LNodeNext::L(lnode) => lnode.find(value),
-                LNodeNext::S(snode) => {
-                    if *snode.get() == *value {
-                        FindResult::Found(snode.get())
-                    }
-                    else {
-                        FindResult::NotFound
-                    }
-                },
+                LNodeNext::S(snode) => snode.find(value),
             }
         }
     }
 
-    pub(super) fn remove<'a, B: Bits, H: HasherBv<B, V>>(&'a self, value: &V) -> RemoveResult<'a, B, V, H> {
+    pub(super) fn remove<'a, B: Bits, H: 'static>(&'a self, value: &V) -> RemoveResult<'a, B, V, H> {
         match self.remove_from_lnode(value) {
             LNodeRemoveResult::NotFound => RemoveResult::NotFound,
             LNodeRemoveResult::RemovedL(lnode, reference) => RemoveResult::RemovedL(lnode, reference),
@@ -85,72 +77,23 @@ impl<V: Value> LNode<V> {
             match &self.next {
                 LNodeNext::L(lnode) => match lnode.remove_from_lnode(value) {
                     LNodeRemoveResult::NotFound => LNodeRemoveResult::NotFound,
-                    LNodeRemoveResult::RemovedL(lnode, reference) => LNodeRemoveResult::RemovedL(lnode, reference),
-                    LNodeRemoveResult::RemovedS(snode, reference) => LNodeRemoveResult::RemovedS(snode, reference),
+                    LNodeRemoveResult::RemovedL(lnode, reference) => LNodeRemoveResult::RemovedL(LNode::new(self.value.clone(), LNodeNext::L(lnode)), reference),
+                    LNodeRemoveResult::RemovedS(snode, reference) => LNodeRemoveResult::RemovedL(LNode::new(self.value.clone(), LNodeNext::S(snode)), reference),
                 },
-                LNodeNext::S(snode) => {
-                    if *snode.get() == *value {
-                        LNodeRemoveResult::RemovedS(SNode::new(self.value.clone()), snode.get())
-                    }
-                    else {
-                        LNodeRemoveResult::NotFound
-                    }
+                LNodeNext::S(snode) => match snode.remove(value) {
+                    SNodeRemoveResult::NotFound => LNodeRemoveResult::NotFound,
+                    SNodeRemoveResult::RemovedZ(reference) => LNodeRemoveResult::RemovedS(SNode::new(self.value.clone()), reference),
                 }
             }
         }
     }
 }
 
-pub(super) enum LNodeInsertResult<B: Bits, V: Value, H: HasherBv<B, V>> {
-    InsertedC(CNode<B, V, H>),
-    InsertedL(Arc<LNode<V>>),
-}
-
-pub(super) fn insert<'a, B: Bits, V: Value, H: HasherBv<B, V>>(this: &'a Arc<LNode<V>>, value: Cow<V>, flag: Option<Flag<B>>) -> InsertResult<'a, B, V, H> {
+pub(super) fn insert<'a, B: Bits, V: Value, H: HasherBv<B, V>>(this: &'a Arc<LNode<V>>, value: Cow<V>, value_flag: Option<Flag<B>>) -> InsertResult<'a, B, V, H> {
     match this.find(value.as_ref()) {
         FindResult::Found(found) => InsertResult::Found(found),
         FindResult::NotFound => {
-            let mut self_flag = if flag.is_some() { Some(Flag::from(H::default().hash(&this.value))) } else { None };
-            while self_flag.is_some() && self_flag.as_ref().unwrap().depth() != flag.as_ref().unwrap().depth() {
-                self_flag = self_flag.unwrap().next();
-            }
-
-            match insert_not_found(this, self_flag, value, flag) {
-                LNodeInsertResult::InsertedC(cnode) => InsertResult::InsertedC(cnode),
-                LNodeInsertResult::InsertedL(lnode) => InsertResult::InsertedL(lnode),
-            }
-        }
-    }
-}
-
-fn insert_not_found<B: Bits, V: Value, H: HasherBv<B, V>>(this: &Arc<LNode<V>>, self_flag: Option<Flag<B>>, value: Cow<V>, flag: Option<Flag<B>>) -> LNodeInsertResult<B, V, H> {
-    if self_flag.is_none() && flag.is_none() {
-        return LNodeInsertResult::InsertedL(LNode::new(value.into_owned(), LNodeNext::L(this.clone())));
-    }
-
-    let self_flag = self_flag.unwrap();
-    let flag = flag.unwrap();
-
-    if self_flag.flag() != flag.flag() {
-        let flags = self_flag.flag().bit_insert(flag.flag()).unwrap();
-        let values = if flags.bit_index(self_flag.flag).unwrap() == 0 {
-            vec!(MNode::L(this.clone()), MNode::S(SNode::new(value.into_owned())))
-        } else {
-            vec!(MNode::S(SNode::new(value.into_owned())), MNode::L(this.clone()))
-        };
-        LNodeInsertResult::InsertedC(CNode::new(new_bit_indexed_array(flags, values, 2_usize).unwrap()))
-    }
-    else {
-        match &this.next {
-            LNodeNext::L(lnode) => match insert_not_found(lnode, self_flag.next(), value, flag.next()) {
-                LNodeInsertResult::InsertedC(cnode) => LNodeInsertResult::InsertedC(CNode::new(new_bit_indexed_array(self_flag.flag(), vec!(MNode::C(cnode)), 1_usize).unwrap())),
-                LNodeInsertResult::InsertedL(lnode) => LNodeInsertResult::InsertedC(CNode::new(new_bit_indexed_array(self_flag.flag(), vec!(MNode::L(lnode)), 1_usize).unwrap())),
-            },
-            LNodeNext::S(snode) => match snode::insert(snode, value, self_flag.next()) {
-                InsertResult::Found(_reference) => panic!(),
-                InsertResult::InsertedC(cnode) => LNodeInsertResult::InsertedC(CNode::new(new_bit_indexed_array(self_flag.flag(), vec!(MNode::C(cnode)), 1_usize).unwrap())),
-                InsertResult::InsertedL(lnode) => LNodeInsertResult::InsertedC(CNode::new(new_bit_indexed_array(self_flag.flag(), vec!(MNode::L(lnode)), 1_usize).unwrap())),
-            },
+            lift_to_cnode_and_insert(LNodeNext::L(this.clone()), H::default().hash(&this.value), value, value_flag)
         }
     }
 }
