@@ -2,8 +2,6 @@
 //! 
 //! rete implementation coming soon 👍
 
-#![recursion_limit="258"]
-
 #![no_std]
 
 #[allow(unused_imports)]
@@ -14,9 +12,7 @@ extern crate alloc;
 extern crate std;
 
 mod alpha_network;
-mod bit_indexed_array;
 mod float;
-mod hash_trie;
 mod map_reduce_map;
 mod map_reduce_set;
 mod node_id;
